@@ -20,7 +20,7 @@ Key rule: complete the current work package (tests passing, ruff clean, mypy str
 |-----------------|----------------------------------------------|----------|----------------------------------------|
 | `/`             | Home page — static welcome/branding page     | No       | Self-contained static HTML (inline CSS/JS) |
 | `/{actor}`      | Public profile + AP actor endpoint           | No       | Self-contained static HTML (inline CSS/JS) for browsers; JSON-LD for AP consumers (content negotiation) |
-| `/login`        | Login page                                   | No       | Self-contained static HTML (inline CSS/JS) |
+| `/login`        | Login page                                   | No       | Static HTML page; styles from shared stylesheet (`/assets/css/styles.css`) |
 | `/admin/*`      | Admin interface                              | Yes      | Static HTML shells + Web Components + JSON API |
 
 ## Tech Stack
@@ -50,52 +50,56 @@ Key rule: complete the current work package (tests passing, ruff clean, mypy str
 ```
 tinker/
 ├── app/
-│   ├── __init__.py          # Quart app factory
+│   ├── __init__.py          # Quart app factory; registers blueprints, seeds admin password
 │   ├── core/                # Config, database session, middleware
 │   │   ├── config.py        # Env var loading, .env support
 │   │   └── database.py      # AsyncEngine, async_sessionmaker, PRAGMAs
-│   ├── models/              # SQLAlchemy ORM models
+│   ├── models/              # 11 SQLAlchemy ORM models (Note, RemoteActor, Follower,
+│   │                        #   Following, TimelineItem, Notification, DeliveryQueue,
+│   │                        #   Settings, MediaAttachment, Like, Keypair)
 │   ├── repositories/        # Data access layer (one per model)
-│   ├── services/            # Business logic
+│   ├── services/
+│   │   ├── keypair.py       # RSA keypair generation and rotation
+│   │   ├── remote_actor.py  # Remote actor fetching and caching (TTL: 24h)
+│   │   └── settings.py      # Settings get/set with typed accessors; seeds defaults
 │   ├── federation/          # ActivityPub protocol logic
-│   │   ├── actor.py         # Actor document, WebFinger, NodeInfo
-│   │   ├── inbox.py         # Incoming activity processing
-│   │   ├── outbox.py        # Outgoing activity creation & delivery
-│   │   ├── signatures.py    # HTTP Signature sign/verify
-│   │   └── delivery.py      # Fan-out, retry, dead instance detection
-│   ├── admin/               # Admin JSON API endpoints & auth
-│   │   ├── routes.py        # Auth-gated page routes (serve static HTML shells)
-│   │   ├── api.py           # JSON API endpoints (timeline, compose, notifications, settings)
-│   │   ├── auth.py          # Login, session, CSRF
-│   │   └── sse.py           # Server-Sent Events for notification push
-│   ├── public/              # Home page, public profile, AP object endpoints
-│   └── media.py             # Upload handling, metadata stripping, avatar proxying
-├── static/
-│   ├── pages/               # Self-contained public HTML pages (inline CSS/JS)
-│   │   ├── home.html        # Home page (/)
+│   │   ├── actor.py         # Actor document builder
+│   │   ├── signatures.py    # HTTP Signature sign/verify (draft-cavage, RSA-SHA256)
+│   │   ├── inbox.py         # Incoming activity processing (WP-10)
+│   │   ├── outbox.py        # Outgoing activity creation & delivery (WP-08/09)
+│   │   └── delivery.py      # Fan-out, retry, dead instance detection (WP-09)
+│   ├── admin/               # Admin interface
+│   │   ├── auth.py          # Login, logout, session, CSRF, rate limiting, require_auth
+│   │   ├── routes.py        # Auth-gated admin page routes (/admin/*)
+│   │   ├── api.py           # JSON API endpoints (WP-13+)
+│   │   └── sse.py           # Server-Sent Events for notification push (WP-16)
+│   ├── public/              # Public routes
+│   │   └── routes.py        # /{username}, WebFinger, NodeInfo, /login served by auth bp
+│   └── media.py             # Upload handling, metadata stripping, avatar proxying (WP-12)
+├── static/                  # Served at /assets/ (static_url_path="/assets")
+│   ├── css/
+│   │   └── styles.css       # Shared stylesheet: OKLCH palette, light-dark() tokens,
+│   │                        #   color-mix() shading, Inter font-face, reset, login styles
+│   ├── fonts/               # Inter variable font (woff2, regular + italic)
+│   ├── pages/               # Public HTML pages (link to shared stylesheet)
+│   │   ├── home.html        # Home page / (WP-07)
 │   │   ├── profile.html     # Public profile page (/{actor}), browser view
 │   │   └── login.html       # Login page (/login)
-│   ├── admin/               # Static HTML shells for admin views
-│   │   ├── timeline.html
-│   │   ├── notifications.html
-│   │   ├── profile.html
-│   │   └── search.html
-│   ├── js/
-│   │   └── components/      # Web Components (Custom Elements) — admin only
-│   │       ├── timeline-item.js
-│   │       ├── compose-box.js
-│   │       └── notification-badge.js
-│   └── css/                 # Admin stylesheets
+│   ├── admin/               # Static HTML shells for admin views (WP-13+)
+│   └── js/
+│       └── components/      # Web Components (Custom Elements) — admin only (WP-13+)
 ├── db/                      # SQLite database file (tinker.db)
 ├── media/                   # Uploaded images (optimised) + cached avatars
 ├── tests/
-│   ├── unit/
-│   └── integration/
-│       └── test_federation.py  # Mock AP server tests
-├── alembic/                 # Database migrations
+│   ├── unit/                # test_app_factory, test_auth, test_config, test_database,
+│   │                        #   test_keypair_service, test_remote_actor_service,
+│   │                        #   test_repositories, test_settings_service, test_signatures
+│   └── integration/         # test_auth_routes, test_public_routes, test_signature_refetch
+├── alembic/
+│   └── versions/            # 001_initial_schema — all 11 tables
 ├── docs/
 │   └── adr/                 # Architecture Decision Records
-├── requirements.md          # Full functional spec
+├── REQUIREMENTS.md          # Full functional spec
 ├── TODO.md                  # Ordered work packages
 ├── CLAUDE.md                # This file
 └── pyproject.toml
@@ -121,7 +125,7 @@ Caddy and systemd configs live outside `tinker/` — they are system-level conce
 
 7. **Two-layer configuration.** Environment variables for infrastructure (domain, paths, secrets) — loaded at startup, immutable. Database settings table for identity and content (display name, bio, avatar, links) — editable through the admin at runtime. See `requirements.md` §8.
 
-8. **Two tiers of UI, no server-side template engine.** Public pages (`/`, `/{actor}`, `/login`) are self-contained static HTML files with all CSS and JS inline — no external dependencies, no Web Components. The `/{actor}` profile page has its profile content injected server-side before serving (simple string interpolation from settings, not a template engine). Admin pages (`/admin/*`) are static HTML shells that load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should be readable without JS even if interactions require it (progressive enhancement where feasible).
+8. **Two tiers of UI, no server-side template engine.** Public pages (`/`, `/{actor}`, `/login`) are static HTML files that link to the shared stylesheet at `/assets/css/styles.css`. They have no external JS, no Web Components, and no server-side template engine. The `/{actor}` profile page has its profile content injected server-side before serving (simple string interpolation from settings, not a template engine). Admin pages (`/admin/*`) are static HTML shells that load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should be readable without JS even if interactions require it (progressive enhancement where feasible).
 
 9. **`/{actor}` is dual-purpose.** The actor route serves both as the public profile page (HTML for browsers) and the ActivityPub actor endpoint (JSON-LD for federation consumers). Content negotiation on `Accept` header determines the response. This is the same URI used in WebFinger and federation.
 
@@ -263,6 +267,10 @@ Before marking any feature complete, verify:
 - Caddy runs in front of Quart in production; in development, connect directly to the Quart dev server.
 - Never mock the database in development — use a local dev database seeded with fixture data.
 - A `.env` file in the project root provides environment variables for local dev. It must be in `.gitignore`.
+- Required environment variables (see `requirements.md` §8.1 for full list):
+  - `TINKER_DOMAIN`, `TINKER_USERNAME`, `TINKER_SECRET_KEY`, `TINKER_DB_PATH`, `TINKER_MEDIA_PATH`
+  - `TINKER_ADMIN_PASSWORD` — plaintext password set on first run; hashed with argon2 and stored in the settings table. Subsequent starts with the same value set are no-ops once the hash is persisted.
+- Static files in `static/` are served at the `/assets/` URL prefix (e.g. `static/css/styles.css` → `/assets/css/styles.css`). This is configured via `static_url_path="/assets"` on the Quart app instance.
 
 ---
 
@@ -327,10 +335,10 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 
 ### Public Pages
 
-- Home page (`/`), public profile (`/{actor}`), and login page (`/login`) are self-contained static HTML files with all CSS and JS inline.
-- No external stylesheets, no external JS files, no Web Components on these pages.
+- Home page (`/`), public profile (`/{actor}`), and login page (`/login`) are static HTML pages that link to the shared stylesheet at `/assets/css/styles.css`. No external JS, no Web Components.
 - The `/{actor}` profile page has its content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table — not a template engine.
 - These pages do not require JavaScript to display their core content.
+- The shared stylesheet (`static/css/styles.css`, served at `/assets/css/styles.css`) owns the OKLCH color palette, semantic `light-dark()` tokens, `color-mix()` shade derivation, Inter `@font-face` declarations, the box-model reset, and page-specific component styles (e.g. `.login-form`). Add new component styles here rather than in `<style>` blocks.
 
 ### Admin UI
 
