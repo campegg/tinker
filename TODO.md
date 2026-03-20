@@ -6,45 +6,45 @@ Refer to `requirements.md` for full specifications. Section references (e.g., §
 
 ---
 
-## WP-01: Project Scaffolding
+## WP-01: Project Scaffolding ✅
 
 Set up the project skeleton and foundational infrastructure.
 
-- [ ] Directory structure per CLAUDE.md
-- [ ] `pyproject.toml` with all dependencies and dev dependency group
-- [ ] Quart app factory (`app/__init__.py`)
-- [ ] Config module (`app/core/config.py`): load environment variables (§8.1), `.env` support
-- [ ] AsyncEngine + `async_sessionmaker` setup (`app/core/database.py`)
-- [ ] SQLite PRAGMAs (WAL mode, busy_timeout) via engine connect event
-- [ ] Request-scoped session lifecycle (`before_request` / `teardown_appcontext`)
-- [ ] Alembic initialisation with sync engine in `env.py` (§7.5)
-- [ ] ruff config, mypy strict config, pytest + pytest-asyncio config
-- [ ] `.gitignore` (include `.env`, `db/tinker.db`, `media/`, `__pycache__/`)
-- [ ] Verify: `uv sync`, `ruff check`, `mypy`, `pytest` all pass on empty project
+- [x] Directory structure per CLAUDE.md
+- [x] `pyproject.toml` with all dependencies and dev dependency group
+- [x] Quart app factory (`app/__init__.py`)
+- [x] Config module (`app/core/config.py`): load environment variables (§8.1), `.env` support
+- [x] AsyncEngine + `async_sessionmaker` setup (`app/core/database.py`)
+- [x] SQLite PRAGMAs (WAL mode, busy_timeout) via engine connect event
+- [x] Request-scoped session lifecycle (`before_request` / `teardown_appcontext`)
+- [x] Alembic initialisation with sync engine in `env.py` (§7.5)
+- [x] ruff config, mypy strict config, pytest + pytest-asyncio config
+- [x] `.gitignore` (include `.env`, `db/tinker.db`, `media/`, `__pycache__/`)
+- [x] Verify: `uv sync`, `ruff check`, `mypy`, `pytest` all pass on empty project
 
 **Produces:** Runnable Quart app that starts, connects to SQLite, and shuts down cleanly. No routes yet.
 
 ---
 
-## WP-02: Models + Initial Migration
+## WP-02: Models + Initial Migration ✅
 
 SQLAlchemy ORM models and the first Alembic migration.
 
-- [ ] Base model class with UUID primary key convention
-- [ ] `Note` model (§3.1)
-- [ ] `RemoteActor` model (actor cache with TTL: URI, display name, handle, avatar URL, inbox URL, shared inbox URL, public key, fetched_at)
-- [ ] `Follower` model (§4.6: actor URI, inbox URL, shared inbox URL, display name, avatar URL, status)
-- [ ] `Following` model (§4.6: actor URI, inbox URL, display name, avatar URL, status)
-- [ ] `TimelineItem` model (received notes/boosts for the home timeline: activity type, actor, content, original object URI, received_at)
-- [ ] `Notification` model (§5.5: type, actor URI, actor name, object URI, read status, created_at)
-- [ ] `DeliveryQueue` model (§6.2: activity JSON, target inbox, status, attempts, next_retry_at, created_at)
-- [ ] `Settings` model (§8.2: key-value pairs)
-- [ ] `MediaAttachment` model (note FK, file path, MIME type, alt text, uploaded_at)
-- [ ] `Like` model (tracking outgoing likes: note URI, actor URI, activity URI)
-- [ ] `Keypair` model (RSA public/private key storage, created_at)
-- [ ] Repository classes for each model
-- [ ] Initial Alembic migration (`001_initial.py`)
-- [ ] Unit tests for all repository classes (mocked, no DB)
+- [x] Base model class with UUID primary key convention
+- [x] `Note` model (§3.1)
+- [x] `RemoteActor` model (actor cache with TTL: URI, display name, handle, avatar URL, inbox URL, shared inbox URL, public key, fetched_at)
+- [x] `Follower` model (§4.6: actor URI, inbox URL, shared inbox URL, display name, avatar URL, status)
+- [x] `Following` model (§4.6: actor URI, inbox URL, display name, avatar URL, status)
+- [x] `TimelineItem` model (received notes/boosts for the home timeline: activity type, actor, content, original object URI, received_at)
+- [x] `Notification` model (§5.5: type, actor URI, actor name, object URI, read status, created_at)
+- [x] `DeliveryQueue` model (§6.2: activity JSON, target inbox, status, attempts, next_retry_at, created_at)
+- [x] `Settings` model (§8.2: key-value pairs)
+- [x] `MediaAttachment` model (note FK, file path, MIME type, alt text, uploaded_at)
+- [x] `Like` model (tracking outgoing likes: note URI, actor URI, activity URI)
+- [x] `Keypair` model (RSA public/private key storage, created_at)
+- [x] Repository classes for each model
+- [x] Initial Alembic migration (`001_initial.py`)
+- [x] Unit tests for all repository classes (mocked, no DB)
 
 **Produces:** Complete schema, migrated database, tested data access layer.
 
@@ -52,14 +52,14 @@ SQLAlchemy ORM models and the first Alembic migration.
 
 ---
 
-## WP-03: Configuration + Settings Service
+## WP-03: Configuration + Settings Service ✅
 
 Wire up both configuration layers so they're usable by everything that follows.
 
-- [ ] Settings service: get/set with typed accessors for known keys (§8.2)
-- [ ] Settings repository
-- [ ] Seed default settings on first run (empty display_name, bio, links)
-- [ ] Tests for settings service and repository
+- [x] Settings service: get/set with typed accessors for known keys (§8.2)
+- [x] Settings repository
+- [x] Seed default settings on first run (empty display_name, bio, links)
+- [x] Tests for settings service and repository
 
 **Produces:** Working config (env vars) and settings (DB) available to the app.
 
@@ -67,17 +67,17 @@ Wire up both configuration layers so they're usable by everything that follows.
 
 ---
 
-## WP-04: Actor, WebFinger, NodeInfo
+## WP-04: Actor, WebFinger, NodeInfo ✅
 
 The identity layer — everything remote servers need to discover and address this instance. The `/{username}` route is dual-purpose: it serves the public profile page for browsers and the JSON-LD actor document for AP consumers.
 
-- [ ] RSA keypair generation on first run, stored via Keypair model
-- [ ] Actor document endpoint at `GET /{username}` (§4.1): JSON-LD response with public key when `Accept` is `application/activity+json` or `application/ld+json`
-- [ ] Public profile page at `GET /{username}`: self-contained static HTML (inline CSS/JS) with profile content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table when `Accept` is `text/html` or browser default (§2.3)
-- [ ] Content negotiation logic on `/{username}` to dispatch between HTML and JSON-LD responses
-- [ ] WebFinger endpoint at `GET /.well-known/webfinger` (§4.1): returns `self` link pointing to `/{username}`
-- [ ] NodeInfo endpoints at `GET /.well-known/nodeinfo` and the referenced NodeInfo document (§4.1)
-- [ ] Integration tests: WebFinger returns correct self link, actor document is valid JSON-LD, NodeInfo reports correct stats, browser request to `/{username}` returns HTML profile with expected content, AP request to `/{username}` returns JSON-LD
+- [x] RSA keypair generation on first run, stored via Keypair model
+- [x] Actor document endpoint at `GET /{username}` (§4.1): JSON-LD response with public key when `Accept` is `application/activity+json` or `application/ld+json`
+- [x] Public profile page at `GET /{username}`: self-contained static HTML (inline CSS/JS) with profile content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table when `Accept` is `text/html` or browser default (§2.3)
+- [x] Content negotiation logic on `/{username}` to dispatch between HTML and JSON-LD responses
+- [x] WebFinger endpoint at `GET /.well-known/webfinger` (§4.1): returns `self` link pointing to `/{username}`
+- [x] NodeInfo endpoints at `GET /.well-known/nodeinfo` and the referenced NodeInfo document (§4.1)
+- [x] Integration tests: WebFinger returns correct self link, actor document is valid JSON-LD, NodeInfo reports correct stats, browser request to `/{username}` returns HTML profile with expected content, AP request to `/{username}` returns JSON-LD
 
 **Produces:** Discoverable ActivityPub actor with a public profile page. Remote servers can find and address this instance. Visitors see the profile in a browser.
 
@@ -85,17 +85,17 @@ The identity layer — everything remote servers need to discover and address th
 
 ---
 
-## WP-05: HTTP Signatures
+## WP-05: HTTP Signatures ✅
 
 Signing and verification — required before any inbox/outbox work.
 
-- [ ] Signature signing module (`app/federation/signatures.py`): sign outgoing requests using the stored RSA keypair (draft-cavage-http-signatures, RSA-SHA256)
-- [ ] Signature verification module: verify incoming requests against the sender's cached public key
-- [ ] Re-fetch fallback (§4.2): on verification failure, fetch actor document fresh and retry once
-- [ ] Remote actor fetching service: retrieve and cache actor documents with TTL (§4.7)
-- [ ] Key rotation: mechanism to regenerate the local keypair and update the actor document
-- [ ] Unit tests for sign/verify round trip
-- [ ] Integration test: verify re-fetch on signature failure
+- [x] Signature signing module (`app/federation/signatures.py`): sign outgoing requests using the stored RSA keypair (draft-cavage-http-signatures, RSA-SHA256)
+- [x] Signature verification module: verify incoming requests against the sender's cached public key
+- [x] Re-fetch fallback (§4.2): on verification failure, fetch actor document fresh and retry once
+- [x] Remote actor fetching service: retrieve and cache actor documents with TTL (§4.7)
+- [x] Key rotation: mechanism to regenerate the local keypair and update the actor document
+- [x] Unit tests for sign/verify round trip
+- [x] Integration test: verify re-fetch on signature failure
 
 **Produces:** All outgoing HTTP requests can be signed; all incoming inbox requests can be verified.
 
