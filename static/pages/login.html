@@ -1,0 +1,38 @@
+<!doctype html>
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Login</title>
+        <link rel="stylesheet" href="/assets/css/styles.css" />
+    </head>
+
+    <body>
+        <form class="login-form" method="post" action="/login">
+            <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+            {{error_html}}
+            <input
+                class="login-field"
+                type="text"
+                name="username"
+                placeholder="Username"
+                autocomplete="username"
+                required
+                aria-label="Username"
+            />
+            <input
+                class="login-field"
+                type="password"
+                name="password"
+                placeholder="Password"
+                autocomplete="current-password"
+                required
+                aria-label="Password"
+            />
+            <div class="login-btn-row">
+                <button class="login-btn" type="submit">Log in</button>
+            </div>
+        </form>
+    </body>
+</html>

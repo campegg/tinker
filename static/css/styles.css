@@ -179,3 +179,76 @@ body {
 /*---------- ids ----------*/
 
 /*---------- classes ----------*/
+
+/*---------- login ----------*/
+
+body:has(.login-form) {
+    align-items: center;
+    justify-content: center;
+}
+
+.login-form {
+    width: 15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.login-field {
+    display: block;
+    width: 100%;
+    height: 2.25rem;
+    padding: 0 0.625rem;
+    background: var(--white);
+    border: 1px solid var(--borders);
+    border-radius: var(--base-border-radius);
+    font-family: inherit;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-normal);
+    color: var(--text);
+    letter-spacing: -0.02em;
+    appearance: none;
+}
+
+.login-field::placeholder {
+    color: var(--text-muted);
+}
+
+.login-field:focus {
+    outline: 2px solid var(--borders);
+    outline-offset: 0;
+}
+
+.login-btn-row {
+    text-align: right;
+}
+
+.login-btn {
+    width: 4.5rem;
+    height: 1.5rem;
+    background: var(--white);
+    border: 1px solid var(--borders);
+    border-radius: var(--base-border-radius);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semi);
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+}
+
+.login-btn:hover {
+    border-color: var(--text-muted);
+}
+
+.login-btn:focus-visible {
+    outline: 2px solid var(--borders);
+    outline-offset: 2px;
+}
+
+.login-error {
+    font-size: var(--font-size-sm);
+    color: var(--red);
+    text-align: center;
+}
