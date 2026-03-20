@@ -125,7 +125,7 @@ Caddy and systemd configs live outside `tinker/` — they are system-level conce
 
 7. **Two-layer configuration.** Environment variables for infrastructure (domain, paths, secrets) — loaded at startup, immutable. Database settings table for identity and content (display name, bio, avatar, links) — editable through the admin at runtime. See `requirements.md` §8.
 
-8. **Two tiers of UI, no server-side template engine.** Public pages (`/`, `/{actor}`, `/login`) are static HTML files that link to the shared stylesheet at `/assets/css/styles.css`. They have no external JS, no Web Components, and no server-side template engine. The `/{actor}` profile page has its profile content injected server-side before serving (simple string interpolation from settings, not a template engine). Admin pages (`/admin/*`) are static HTML shells that load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should be readable without JS even if interactions require it (progressive enhancement where feasible).
+8. **Shared assets, no server-side template engine.** All pages — public and admin alike — may link to external stylesheets, JavaScript files, and Web Components served from `/assets/`. There is no server-side template engine; any dynamic content is injected via simple string interpolation before serving. The `/{actor}` profile page uses this approach to embed display name, bio, avatar, handle, and links from the settings table. Admin pages (`/admin/*`) are static HTML shells that load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should remain readable without JavaScript; interactivity is a progressive enhancement.
 
 9. **`/{actor}` is dual-purpose.** The actor route serves both as the public profile page (HTML for browsers) and the ActivityPub actor endpoint (JSON-LD for federation consumers). Content negotiation on `Accept` header determines the response. This is the same URI used in WebFinger and federation.
 
@@ -335,10 +335,10 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 
 ### Public Pages
 
-- Home page (`/`), public profile (`/{actor}`), and login page (`/login`) are static HTML pages that link to the shared stylesheet at `/assets/css/styles.css`. No external JS, no Web Components.
+- Home page (`/`), public profile (`/{actor}`), and login page (`/login`) are static HTML pages. They may link to external stylesheets, JavaScript files, and Web Components served from `/assets/` — there is no requirement to inline assets.
 - The `/{actor}` profile page has its content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table — not a template engine.
-- These pages do not require JavaScript to display their core content.
-- The shared stylesheet (`static/css/styles.css`, served at `/assets/css/styles.css`) owns the OKLCH color palette, semantic `light-dark()` tokens, `color-mix()` shade derivation, Inter `@font-face` declarations, the box-model reset, and page-specific component styles (e.g. `.login-form`). Add new component styles here rather than in `<style>` blocks.
+- Pages must not require JavaScript to display their core content; JS is a progressive enhancement only.
+- The shared stylesheet (`static/css/styles.css`, served at `/assets/css/styles.css`) owns the OKLCH color palette, semantic `light-dark()` tokens, `color-mix()` shade derivation, Inter `@font-face` declarations, the box-model reset, and page-specific component styles (e.g. `.login-form`). Prefer adding new component styles here rather than in `<style>` blocks.
 
 ### Admin UI
 
