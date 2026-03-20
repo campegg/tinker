@@ -57,7 +57,7 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["D"]
+"tests/**/*.py" = ["D", "TCH"]
 "alembic/**/*.py" = ["D"]
 "alembic/versions/**/*.py" = ["E501", "W291", "UP007", "UP035"]
 

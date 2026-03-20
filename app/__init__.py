@@ -4,6 +4,7 @@ from quart import Quart, g
 
 from app.core.config import load_config
 from app.core.database import close_engine, get_session_factory, init_engine
+from app.public.routes import public
 
 
 def create_app() -> Quart:
@@ -34,5 +35,7 @@ def create_app() -> Quart:
     async def _shutdown() -> None:
         """Dispose of the database engine on shutdown."""
         await close_engine(engine)
+
+    app.register_blueprint(public)
 
     return app
