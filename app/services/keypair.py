@@ -78,6 +78,20 @@ class KeypairService:
         _, private_pem = await self.get_or_create()
         return private_pem
 
+    async def rotate_keypair(self) -> tuple[str, str]:
+        """Rotate the local keypair by generating a new one.
+
+        The previous keypair remains in the database but is superseded
+        by the newly generated one, which becomes the active keypair
+        returned by :meth:`get_or_create`. Remote servers will pick up
+        the new public key from the actor document on their next fetch.
+
+        Returns:
+            A tuple of ``(public_key_pem, private_key_pem)`` for the
+            newly generated keypair.
+        """
+        return await self.generate_keypair()
+
     async def generate_keypair(self) -> tuple[str, str]:
         """Generate a new RSA 2048-bit keypair and persist it.
 
