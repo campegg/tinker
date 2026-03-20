@@ -12,7 +12,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from app.core.database import create_sync_url
-from app.models.base import Base
+from app.models import Base
 
 # Load .env for local development
 load_dotenv()

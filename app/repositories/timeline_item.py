@@ -1,0 +1,94 @@
+"""Timeline item repository for accessing federated timeline entries.
+
+Provides data access methods for the TimelineItem model, including
+cursor-based pagination for timeline rendering and lookup by object URI.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
+
+if TYPE_CHECKING:
+    import uuid
+    from collections.abc import Sequence
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.timeline_item import TimelineItem
+from app.repositories.base import BaseRepository
+
+
+class TimelineItemRepository(BaseRepository[TimelineItem]):
+    """Repository for TimelineItem entities.
+
+    Extends :class:`BaseRepository` with timeline-specific queries such as
+    cursor-based pagination ordered by receive time and lookup by the
+    original object URI.
+
+    Args:
+        session: The async database session to use for queries.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        """Initialise the repository with a database session.
+
+        Args:
+            session: The async database session to use for queries.
+        """
+        super().__init__(session, TimelineItem)
+
+    async def get_recent(
+        self,
+        limit: int = 20,
+        before_id: uuid.UUID | None = None,
+    ) -> Sequence[TimelineItem]:
+        """Fetch recent timeline items ordered by receive time descending.
+
+        Supports cursor-based pagination via the ``before_id`` parameter.
+        When provided, only items received before the item with the given
+        ID are returned, enabling infinite-scroll style loading.
+
+        Args:
+            limit: Maximum number of items to return. Defaults to 20.
+            before_id: If provided, only return items older than the
+                timeline item with this UUID. Used as a cursor for
+                pagination.
+
+        Returns:
+            A sequence of timeline items ordered from newest to oldest.
+        """
+        stmt = select(TimelineItem)
+
+        if before_id is not None:
+            # Subquery to find the received_at of the cursor item
+            cursor_subquery = (
+                select(TimelineItem.received_at)
+                .where(TimelineItem.id == before_id)
+                .scalar_subquery()
+            )
+            stmt = stmt.where(TimelineItem.received_at < cursor_subquery)
+
+        stmt = stmt.order_by(TimelineItem.received_at.desc()).limit(limit)
+
+        result = await self._session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_by_object_uri(self, uri: str) -> TimelineItem | None:
+        """Fetch a timeline item by its original object URI.
+
+        Looks up the item by the ``original_object_uri`` field, which
+        stores the ActivityPub URI of the object the activity refers to.
+
+        Args:
+            uri: The ActivityPub URI of the original object.
+
+        Returns:
+            The matching timeline item, or ``None`` if no item exists
+            with the given object URI.
+        """
+        result = await self._session.execute(
+            select(TimelineItem).where(TimelineItem.original_object_uri == uri)
+        )
+        return result.scalars().first()
