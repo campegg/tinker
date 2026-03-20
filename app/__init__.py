@@ -9,7 +9,7 @@ from app.public.routes import public
 
 def create_app() -> Quart:
     """Create and configure the Quart application."""
-    app = Quart(__name__, static_folder="../static")
+    app = Quart(__name__, static_folder="../static", static_url_path="/assets")
 
     config = load_config()
     app.config.from_mapping(config)
