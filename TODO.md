@@ -103,19 +103,19 @@ Signing and verification — required before any inbox/outbox work.
 
 ---
 
-## WP-06: Authentication + Sessions
+## WP-06: Authentication + Sessions ✅
 
 Admin auth — required before any admin routes.
 
-- [ ] User table or config-based admin credential (single user — password hash stored in settings or a dedicated table)
-- [ ] Login route at `GET /login` serving self-contained static HTML page from `static/pages/login.html` (inline CSS/JS, simple form with username + password, POSTs to auth endpoint)
-- [ ] Login POST endpoint: validate credentials, create session
-- [ ] argon2 password hashing
-- [ ] Server-side session with secure cookie (HttpOnly, Secure, SameSite=Strict) (§5.1)
-- [ ] CSRF token middleware on all state-changing endpoints
-- [ ] Rate limiting on login endpoint
-- [ ] Auth guard: decorator or middleware that protects `/admin/*` routes
-- [ ] Tests for login flow, session creation, CSRF validation, rate limiting
+- [x] User table or config-based admin credential (single user — password hash stored in settings or a dedicated table)
+- [x] Login route at `GET /login` serving self-contained static HTML page from `static/pages/login.html` (inline CSS/JS, simple form with username + password, POSTs to auth endpoint)
+- [x] Login POST endpoint: validate credentials, create session
+- [x] argon2 password hashing
+- [x] Server-side session with secure cookie (HttpOnly, Secure, SameSite=Strict) (§5.1)
+- [x] CSRF token middleware on all state-changing endpoints
+- [x] Rate limiting on login endpoint
+- [x] Auth guard: decorator or middleware that protects `/admin/*` routes
+- [x] Tests for login flow, session creation, CSRF validation, rate limiting
 
 **Produces:** Working auth. Admin routes can be protected. Login page served at `/login`.
 

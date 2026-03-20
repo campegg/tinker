@@ -14,6 +14,12 @@ def create_app() -> Quart:
     config = load_config()
     app.config.from_mapping(config)
 
+    # Session cookie security — values must be set as native Python types, not
+    # strings, so they are applied after from_mapping().
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+
     engine = init_engine(app.config["TINKER_DB_PATH"])
     session_factory = get_session_factory(engine)
     app.config["DB_ENGINE"] = engine
@@ -31,11 +37,41 @@ def create_app() -> Quart:
         if session is not None:
             await session.close()
 
+    @app.before_serving
+    async def _seed_admin_password() -> None:
+        """Hash and store the admin password on first run.
+
+        If ``TINKER_ADMIN_PASSWORD`` is set in the environment and no
+        password hash exists in the database yet, hashes the plaintext
+        password with argon2 and stores it. Subsequent starts with the
+        same env var set are no-ops once the hash is persisted.
+        """
+        admin_password: str = app.config.get("TINKER_ADMIN_PASSWORD", "")
+        if not admin_password:
+            return
+        db_session = session_factory()
+        try:
+            from app.admin.auth import hash_password
+            from app.services.settings import SettingsService
+
+            settings = SettingsService(db_session)
+            existing = await settings.get_admin_password_hash()
+            if existing is None:
+                await settings.set_admin_password_hash(hash_password(admin_password))
+        finally:
+            await db_session.close()
+
     @app.after_serving
     async def _shutdown() -> None:
         """Dispose of the database engine on shutdown."""
         await close_engine(engine)
 
     app.register_blueprint(public)
+
+    from app.admin.auth import auth
+    from app.admin.routes import admin as admin_bp
+
+    app.register_blueprint(auth)
+    app.register_blueprint(admin_bp)
 
     return app

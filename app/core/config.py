@@ -32,6 +32,9 @@ def load_config() -> dict[str, str]:
         "TINKER_MEDIA_PATH": os.environ.get("TINKER_MEDIA_PATH", "media/"),
         "TINKER_SECRET_KEY": os.environ.get("TINKER_SECRET_KEY", "change-me-in-production"),
         "TINKER_USERNAME": os.environ.get("TINKER_USERNAME", "admin"),
+        # Optional: set an initial admin password on first run.  Once hashed and
+        # stored in the database this variable is no longer consulted.
+        "TINKER_ADMIN_PASSWORD": os.environ.get("TINKER_ADMIN_PASSWORD", ""),
     }
 
     # Quart uses SECRET_KEY for session signing

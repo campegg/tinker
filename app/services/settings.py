@@ -160,6 +160,22 @@ class SettingsService:
         """
         await self.set("links", json.dumps(links))
 
+    async def get_admin_password_hash(self) -> str | None:
+        """Return the stored argon2 password hash for the admin user.
+
+        Returns:
+            The argon2 hash string, or ``None`` if no password has been set.
+        """
+        return await self.get("admin_password_hash")
+
+    async def set_admin_password_hash(self, hash_value: str) -> None:
+        """Store the argon2 password hash for the admin user.
+
+        Args:
+            hash_value: The argon2 hash string to store.
+        """
+        await self.set("admin_password_hash", hash_value)
+
     async def get_all_profile(self) -> dict[str, str | list[str] | None]:
         """Return all profile-related settings as a dictionary.
 
