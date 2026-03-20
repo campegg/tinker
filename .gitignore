@@ -1,0 +1,50 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Database
+db/*.db
+db/*.db-wal
+db/*.db-shm
+
+# Media uploads
+media/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# mypy
+.mypy_cache/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ruff
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# uv
+uv.lock

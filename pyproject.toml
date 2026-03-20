@@ -1,0 +1,98 @@
+[project]
+name = "tinker"
+version = "0.1.0"
+description = "A single-user ActivityPub microblog"
+requires-python = ">=3.12"
+dependencies = [
+    "quart>=0.19,<1.0",
+    "sqlalchemy[asyncio]>=2.0,<3.0",
+    "aiosqlite>=0.20,<1.0",
+    "alembic>=1.13,<2.0",
+    "httpx[http2]>=0.27,<1.0",
+    "cryptography>=42.0,<44.0",
+    "nh3>=0.2,<1.0",
+    "markdown-it-py>=3.0,<4.0",
+    "Pillow>=10.0,<12.0",
+    "pillow-heif>=0.16",
+    "argon2-cffi>=23.1,<24.0",
+    "python-dotenv>=1.0,<2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "pytest-cov>=5.0,<6.0",
+    "ruff>=0.4,<1.0",
+    "mypy>=1.10,<2.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 99
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "A",     # flake8-builtins
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "RUF",   # ruff-specific rules
+    "D",     # pydocstyle
+]
+ignore = [
+    "D100",  # missing docstring in public module (too noisy for __init__.py etc.)
+    "D104",  # missing docstring in public package
+    "D106",  # missing docstring in public nested class
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+"alembic/**/*.py" = ["D"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = []
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[[tool.mypy.overrides]]
+module = [
+    "nh3.*",
+    "pillow_heif.*",
+    "aiosqlite.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
