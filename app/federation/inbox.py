@@ -502,7 +502,10 @@ async def _handle_follow(
     follow_id = activity.get("id", actor_uri)
     accept_id = f"{local_actor_uri}#accepts/{uuid.uuid4()}"
     accept_activity: dict[str, Any] = {
-        "@context": "https://www.w3.org/ns/activitystreams",
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1",
+        ],
         "id": accept_id,
         "type": "Accept",
         "actor": local_actor_uri,

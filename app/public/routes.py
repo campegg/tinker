@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 
 # Maximum inbox request body size (1 MiB).
 _MAX_INBOX_BODY_BYTES = 1_048_576
+
+logger = logging.getLogger(__name__)
 
 public = Blueprint("public", __name__)
 
@@ -227,6 +230,7 @@ async def actor_profile(username: str) -> Response:
             response=_json_dumps(actor_doc),
             status=200,
             content_type=_AP_CONTENT_TYPE,
+            headers={"Vary": "Accept"},
         )
 
     # Browser request — serve the profile HTML page.
@@ -247,7 +251,12 @@ async def actor_profile(username: str) -> Response:
         domain=domain,
         actor_uri=f"https://{domain}/{username}",
     )
-    return Response(response=html, status=200, content_type="text/html; charset=utf-8")
+    return Response(
+        response=html,
+        status=200,
+        content_type="text/html; charset=utf-8",
+        headers={"Vary": "Accept"},
+    )
 
 
 @public.route("/.well-known/webfinger", methods=["GET"])
@@ -272,14 +281,21 @@ async def webfinger() -> Response:
     if resource != expected_resource:
         abort(404)
 
+    actor_uri = f"https://{domain}/{username}"
     body: dict[str, Any] = {
         "subject": expected_resource,
+        "aliases": [actor_uri],
         "links": [
             {
                 "rel": "self",
                 "type": "application/activity+json",
-                "href": f"https://{domain}/{username}",
-            }
+                "href": actor_uri,
+            },
+            {
+                "rel": "http://webfinger.net/rel/profile-page",
+                "type": "text/html",
+                "href": f"https://{domain}/@{username}",
+            },
         ],
     }
     return Response(
@@ -757,25 +773,43 @@ async def inbox(username: str) -> Response:
     if public_key_pem:
         verified = verify_signature(
             method=request.method,
-            path=request.full_path if request.query_string else request.path,
+            url=str(request.url),
             headers=dict(request.headers),
             body=body,
             public_key_pem=public_key_pem,
         )
 
+    actor_gone = False
     if not verified:
         # Re-fetch actor document and retry once (handles key rotation).
         refreshed = await actor_svc.refresh(key_owner_uri)
         if refreshed and refreshed.public_key:
             verified = verify_signature(
                 method=request.method,
-                path=request.full_path if request.query_string else request.path,
+                url=str(request.url),
                 headers=dict(request.headers),
                 body=body,
                 public_key_pem=refreshed.public_key,
             )
+        elif refreshed is None and not public_key_pem:
+            # Actor document could not be fetched on either attempt — the
+            # remote actor is likely deleted or the instance is gone.
+            actor_gone = True
 
     if not verified:
+        # Delete activities arrive from actors whose profiles have been
+        # removed.  The public key is unfetchable because the actor no
+        # longer exists.  Per spec and Mastodon behaviour: log and discard
+        # gracefully rather than returning 401, which could trigger
+        # unnecessary retry storms from the remote server.
+        if activity_type == "Delete" and actor_gone:
+            logger.info(
+                "Discarding Delete activity from gone/unreachable actor %r "
+                "(public key unavailable — actor likely deleted)",
+                key_owner_uri,
+            )
+            return Response(response="", status=202)
+
         return Response(
             response=_json_dumps({"error": "Signature verification failed."}),
             status=401,

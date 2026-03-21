@@ -16,6 +16,7 @@ dependencies = [
     "pillow-heif>=0.16",
     "argon2-cffi>=23.1,<24.0",
     "python-dotenv>=1.0,<2.0",
+    "apsig>=0.1",
 ]
 
 [dependency-groups]
@@ -82,6 +83,7 @@ module = [
     "nh3.*",
     "pillow_heif.*",
     "aiosqlite.*",
+    "apsig.*",
 ]
 ignore_missing_imports = true
 

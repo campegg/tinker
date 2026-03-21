@@ -147,6 +147,215 @@ Caddy and systemd configs live outside `tinker/` — they are system-level conce
 
 ---
 
+## ActivityPub / Federation
+
+Tinker implements ActivityPub for federation with the Fediverse. The W3C spec is underspecified in practice—Mastodon is the de facto standard. When the spec and Mastodon's behavior diverge, match Mastodon.
+
+### Authoritative References
+
+- **Primary:** Mastodon's ActivityPub documentation: https://docs.joinmastodon.org/spec/activitypub/
+- **Secondary:** W3C ActivityPub spec: https://www.w3.org/TR/activitypub/
+- **HTTP Signatures:** draft-cavage-http-signatures-12 specifically (NOT later drafts, NOT RFC 9421)
+- **Survey of fediverse compliance:** https://swicg.github.io/activitypub-http-signature/
+
+When in doubt about how an activity or object should be structured, check what Mastodon sends/expects rather than what the W3C spec says is valid.
+
+### HTTP Signatures
+
+**Never implement signature construction or verification manually. Use `apsig`.**
+
+```bash
+pip install apsig
+```
+
+`apsig` implements draft-cavage-http-signatures-12, Linked Data Signatures, and Object Integrity Proofs (FEP-8b32). It uses the `cryptography` library internally.
+
+#### Signing outbound requests
+
+```python
+import email.utils
+from apsig.draft import Signer
+
+method = "POST"
+url = "https://remote.example/users/alice/inbox"
+body = json.dumps(activity, ensure_ascii=False)
+body_bytes = body.encode("utf-8")  # CRITICAL: sign the exact bytes you send
+
+headers = {
+    "Content-Type": "application/activity+json",
+    "Date": email.utils.formatdate(usegmt=True),
+}
+
+signer = Signer(
+    headers=headers,
+    private_key=private_key,        # RSA private key (cryptography library object)
+    method=method,
+    url=url,
+    key_id=f"{actor_id}#main-key",  # Must match publicKey.id in your actor document
+    body=body_bytes,
+)
+signed_headers = signer.sign()
+# Use signed_headers for the actual HTTP request
+```
+
+#### Verifying inbound requests
+
+```python
+from apsig.draft import Verifier
+
+verifier = Verifier(
+    public_pem=public_key_pem,  # PEM-encoded public key string
+    method=request.method,
+    url=str(request.url),
+    headers=dict(request.headers),
+    body=await request.body(),   # Raw bytes, not parsed JSON
+)
+key_id = verifier.verify(raise_on_fail=True)
+```
+
+#### Critical signature rules
+
+- The body MUST be passed as raw bytes. If you serialize JSON, sign the exact byte string you send. Re-serializing (e.g., parsing then re-dumping) will change key order or whitespace and break the digest.
+- Use RSA 2048-bit or larger keys. Ed25519 is not yet widely supported in the fediverse.
+- The `keyId` in outbound signatures must be `{actor_id}#main-key` — this must match the `publicKey.id` field in your actor document exactly.
+- When verifying inbound signatures, you must fetch the sender's actor document to retrieve their public key. Cache aggressively but handle key rotation: if verification fails with a cached key, re-fetch the actor and retry once.
+- Handle `Delete` activities from actors whose profiles no longer exist — signature verification will fail because the public key can't be fetched. Log and discard gracefully; do not retry or error-loop.
+
+### @context Array
+
+Use this exact `@context` for actor documents and activities. Do not construct your own from the spec.
+
+```python
+ACTIVITYPUB_CONTEXT = [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+]
+```
+
+Do not expand security terms into full namespace URIs (e.g., `https://w3id.org/security#publicKey`). Mastodon expects the compact form (`publicKey`) and will fail to retrieve keys if you use the expanded form.
+
+If you need Mastodon-specific extensions (hashtags, sensitive flags, featured collections), add the Mastodon context. Refer to https://docs.joinmastodon.org/spec/activitypub/ for the current shape.
+
+### Content-Type Negotiation
+
+Every endpoint that serves ActivityPub data must handle content negotiation correctly.
+
+| Endpoint | Accept header check | Response Content-Type |
+|---|---|---|
+| Actor (`/users/{username}`) | `application/activity+json` or `application/ld+json` | `application/activity+json` |
+| WebFinger (`/.well-known/webfinger`) | N/A (always JSON) | `application/jrd+json` |
+| Inbox (POST) | N/A (receiving) | N/A |
+| Outbox | `application/activity+json` or `application/ld+json` | `application/activity+json` |
+
+- If the `Accept` header requests HTML (or has no ActivityPub type), serve the HTML page. If it requests `application/activity+json` or includes `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`, serve the JSON-LD actor/object.
+- **Caddy/proxy configuration:** Set `Vary: Accept` on all content-negotiated responses. Without this, a cached HTML response may be served to a Mastodon fetch, or vice versa. This is a silent failure — no errors, just invisible breakage.
+- Returning `application/json` instead of `application/activity+json` will make your actor undiscoverable on Mastodon with no error message.
+
+### WebFinger
+
+WebFinger must be served at `/.well-known/webfinger` and respond to `?resource=acct:{username}@{domain}`.
+
+```python
+# Response structure
+{
+    "subject": "acct:{username}@{domain}",
+    "aliases": [
+        "https://{domain}/users/{username}"
+    ],
+    "links": [
+        {
+            "rel": "self",
+            "type": "application/activity+json",
+            "href": "https://{domain}/users/{username}"
+        },
+        {
+            "rel": "http://webfinger.net/rel/profile-page",
+            "type": "text/html",
+            "href": "https://{domain}/@{username}"
+        }
+    ]
+}
+```
+
+#### WebFinger rules
+
+- The `subject` must use the `acct:` URI scheme.
+- The `self` link `href` must point to the URL where the actor JSON-LD document is actually served. Mastodon uses this URL to fetch the actor.
+- The actor document's `id` field must match the URL where it's served. If the `id` says `https://example.com/users/cam` but the document lives at `https://example.com/ap/users/cam`, Mastodon will reject it.
+- Mastodon performs a second WebFinger lookup on the domain extracted from the actor's `id`. If your WebFinger domain and actor `id` domain don't match, discovery fails silently.
+- `preferredUsername` in the actor document must correspond to the WebFinger `acct:` username.
+- Content-Type must be `application/jrd+json`.
+
+### Actor Document
+
+Minimal actor document that Mastodon will accept:
+
+```python
+{
+    "@context": [
+        "https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1"
+    ],
+    "id": "https://{domain}/users/{username}",
+    "type": "Person",
+    "preferredUsername": "{username}",
+    "name": "{display_name}",
+    "summary": "{bio_html}",
+    "inbox": "https://{domain}/users/{username}/inbox",
+    "outbox": "https://{domain}/users/{username}/outbox",
+    "followers": "https://{domain}/users/{username}/followers",
+    "following": "https://{domain}/users/{username}/following",
+    "publicKey": {
+        "id": "https://{domain}/users/{username}#main-key",
+        "owner": "https://{domain}/users/{username}",
+        "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+    }
+}
+```
+
+- The `id` must be the canonical URL of this document (self-referencing).
+- `publicKey.id` must be `{actor_id}#main-key`.
+- `publicKey.owner` must match the actor `id`.
+- If `type` is `Application` or `Service`, Mastodon flags the account as a bot.
+- You must serve an outbox endpoint even if it's empty — some implementations require it for discovery.
+
+### Inbox Handling
+
+- Return `202 Accepted` for valid incoming activities. Process asynchronously.
+- Verify HTTP signatures on all incoming POST requests before processing.
+- Expect and handle: `Follow`, `Undo` (Follow, Like, Announce), `Accept`, `Reject`, `Create` (Note), `Update`, `Delete`, `Like`, `Announce`.
+- `Delete` activities will arrive for actors whose profiles no longer exist. The public key will be unfetchable. Handle gracefully — log and discard.
+- Set a recursion depth limit when resolving referenced objects. Unbounded recursion is a DoS vector.
+- Do not fetch OpenGraph previews for links in received posts — or if you do, rate-limit and deduplicate. Every instance that receives a post independently fetches link previews, which can DDoS the linked server.
+
+### Outbound Delivery
+
+- Deliver to each follower's inbox (or shared inbox if available) via signed POST.
+- Implement retry with exponential backoff. Federation is inherently flaky — single-attempt delivery will lose messages.
+- For `Create` activities (new posts), wrap the object in a `Create` activity with a unique `id`.
+- For `Update` activities, the `updated` timestamp on the object MUST change or Mastodon will silently drop the update.
+- Deduplicate delivery — if multiple followers share a `sharedInbox`, POST once.
+
+### Testing and Debugging
+
+- **activitypub.academy** — Creates anonymous Mastodon accounts for testing. Provides server-side logs of what it sends and receives. Essential for debugging silent failures.
+- **verify.funfedi.dev** — Actor document validator.
+- **ngrok or similar** — Required for local development. You cannot test federation against localhost because remote servers need to reach your inbox and fetch your actor document.
+- **Log everything.** ActivityPub failures are mostly silent (202 Accepted, content never appears). Log all inbound requests, all outbound delivery attempts and responses, and all signature verification results.
+
+### Common Failure Modes
+
+| Symptom | Likely cause |
+|---|---|
+| Actor not discoverable on Mastodon | Wrong Content-Type on actor endpoint or WebFinger; `id` / WebFinger domain mismatch; missing outbox endpoint |
+| 202 Accepted but content never appears | HTTP signature invalid; `@context` uses expanded namespace URIs; actor `id` doesn't match served URL |
+| Updates not propagating | Missing or unchanged `updated` timestamp on the object |
+| Signature verification failures on inbound | Cached stale public key (handle key rotation); `Delete` from removed actor (discard gracefully) |
+| Followers not receiving posts | Delivery not retrying on failure; shared inbox deduplication missing; outbound signature malformed |
+| Profile fields not rendering on Mastodon | Using `https://schema.org/` context instead of `http://schema.org#` (Mastodon's known bug — match their expectation) |
+
+---
+
 ## Commands
 
 Reference these exact commands — never infer or abbreviate.

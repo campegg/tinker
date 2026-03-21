@@ -22,9 +22,13 @@ if TYPE_CHECKING:
 # are visible to anyone (i.e. public posts).
 AP_PUBLIC = "https://www.w3.org/ns/activitystreams#Public"
 
-# The ActivityStreams 2.0 JSON-LD context URI. Used as "@context" on all
-# top-level AP objects and activities produced by this application.
-AP_CONTEXT = "https://www.w3.org/ns/activitystreams"
+# The JSON-LD context array for all top-level AP objects and activities.
+# Both namespaces are required: activitystreams for core AS2 terms and
+# security/v1 for publicKey and related cryptographic vocabulary.
+AP_CONTEXT: list[str] = [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+]
 
 # Matches hashtags in Markdown source text. Requires the "#" to not be
 # preceded by a word character so that mid-word occurrences are not matched

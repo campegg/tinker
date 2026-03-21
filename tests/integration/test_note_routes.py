@@ -100,7 +100,10 @@ class TestNoteEndpoint:
         )
 
         data = await response.get_json()
-        assert data["@context"] == "https://www.w3.org/ns/activitystreams"
+        assert data["@context"] == [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1",
+        ]
         assert data["type"] == "Note"
         assert data["id"] == f"https://test.example.com/notes/{note_id}"
         assert data["attributedTo"] == "https://test.example.com/testuser"
@@ -166,7 +169,10 @@ class TestOutboxCollection:
     async def test_root_has_context(self, client: Any) -> None:
         response = await client.get("/testuser/outbox")
         data = await response.get_json()
-        assert data["@context"] == "https://www.w3.org/ns/activitystreams"
+        assert data["@context"] == [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1",
+        ]
 
     async def test_root_has_total_items(self, client: Any) -> None:
         response = await client.get("/testuser/outbox")
@@ -210,7 +216,10 @@ class TestOutboxCollection:
     async def test_page_has_context(self, client: Any) -> None:
         response = await client.get("/testuser/outbox?page=true")
         data = await response.get_json()
-        assert data["@context"] == "https://www.w3.org/ns/activitystreams"
+        assert data["@context"] == [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1",
+        ]
 
     async def test_page_has_part_of_link(self, client: Any) -> None:
         response = await client.get("/testuser/outbox?page=true")

@@ -104,12 +104,9 @@ def _verify_captured_signature(
     public_key_pem: str,
 ) -> bool:
     """Verify the HTTP Signature on a captured delivery call."""
-    from urllib.parse import urlparse
-
-    parsed = urlparse(captured_call["url"])
     return verify_signature(
         method="POST",
-        path=parsed.path,
+        url=captured_call["url"],
         headers=captured_call["headers"],
         body=captured_call["content"],
         public_key_pem=public_key_pem,

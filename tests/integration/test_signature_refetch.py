@@ -141,7 +141,7 @@ class TestSignatureVerificationWithRefetch:
 
         result = verify_signature(
             method="POST",
-            path="/testuser/inbox",
+            url="https://local.example.com/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=old_public,
@@ -170,7 +170,7 @@ class TestSignatureVerificationWithRefetch:
         # Verify with the OLD public key (what we have cached) → should fail
         result = verify_signature(
             method="POST",
-            path="/testuser/inbox",
+            url="https://local.example.com/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=old_public,
@@ -199,7 +199,7 @@ class TestSignatureVerificationWithRefetch:
         # Step 1: Try verification with the OLD (cached) key → fails
         first_attempt = verify_signature(
             method="POST",
-            path="/testuser/inbox",
+            url="https://local.example.com/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=old_public,
@@ -235,7 +235,7 @@ class TestSignatureVerificationWithRefetch:
         # Step 3: Retry verification with the NEW key → succeeds
         second_attempt = verify_signature(
             method="POST",
-            path="/testuser/inbox",
+            url="https://local.example.com/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=refreshed_public_key,
@@ -265,7 +265,7 @@ class TestSignatureVerificationWithRefetch:
         assert (
             verify_signature(
                 method="POST",
-                path="/testuser/inbox",
+                url="https://local.example.com/testuser/inbox",
                 headers=signed_headers,
                 body=body,
                 public_key_pem=old_public,
@@ -409,7 +409,7 @@ class TestSignatureVerificationWithRefetch:
         assert (
             verify_signature(
                 method="POST",
-                path="/testuser/inbox",
+                url="https://local.example.com/testuser/inbox",
                 headers=signed_headers,
                 body=body,
                 public_key_pem=old_public,
@@ -448,7 +448,7 @@ class TestSignatureVerificationWithRefetch:
         assert (
             verify_signature(
                 method="POST",
-                path="/testuser/inbox",
+                url="https://local.example.com/testuser/inbox",
                 headers=signed_headers,
                 body=body,
                 public_key_pem=refreshed_key,

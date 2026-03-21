@@ -1027,6 +1027,305 @@ class TestAcceptRejectFollow:
         assert remaining is None
 
 
+class TestAcceptFollowActivityShape:
+    """Tests verifying the shape of the Accept{Follow} activity sent back to followers.
+
+    Rather than intercepting HTTP (which races with the background delivery
+    task), these tests read the serialised activity directly from the
+    ``DeliveryQueue`` table, which is written synchronously during inbox
+    processing before any network I/O occurs.
+    """
+
+    async def _send_follow_and_get_accept_payload(
+        self,
+        app: Quart,
+        public_pem: str,
+        private_pem: str,
+        follow_id: str,
+    ) -> dict[str, Any]:
+        """Helper: send a Follow, wait for processing, return queued Accept payload.
+
+        Args:
+            app: The test Quart application.
+            public_pem: The remote actor's public key (stored in the DB cache).
+            private_pem: The remote actor's private key (used to sign the Follow).
+            follow_id: A unique AP URI for the Follow activity.
+
+        Returns:
+            The parsed JSON dict of the first ``Accept`` activity found in the
+            ``DeliveryQueue`` table.
+        """
+        await _seed_remote_actor(app, public_pem)
+
+        body = json.dumps(
+            {
+                "type": "Follow",
+                "id": follow_id,
+                "actor": REMOTE_ACTOR_URI,
+                "object": LOCAL_ACTOR_URI,
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        null_delivery = _make_capturing_delivery_client([])
+        with patch("app.federation.delivery.httpx.AsyncClient", null_delivery):
+            client = app.test_client()
+            resp = await client.post(
+                INBOX_PATH,
+                data=body,
+                headers={**headers, "Content-Type": "application/activity+json"},
+            )
+            assert resp.status_code == 202
+            await _wait_for_tasks()
+
+        # Read the queued activity payload from the DB — it is persisted
+        # synchronously before any delivery attempt, so it is always present
+        # regardless of delivery task timing.
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.repositories.delivery_queue import DeliveryQueueRepository
+
+            repo = DeliveryQueueRepository(session)
+            items = await repo.get_pending()
+            # get_pending may be empty if already delivered; fall back to all recent.
+            if not items:
+                from sqlalchemy import select
+
+                from app.models.delivery_queue import DeliveryQueue
+
+                result = await session.execute(
+                    select(DeliveryQueue).order_by(DeliveryQueue.created_at.desc()).limit(10)
+                )
+                items = list(result.scalars().all())
+
+        assert items, "No DeliveryQueue entries found — Follow processing may have failed"
+
+        accept_items: list[dict[str, Any]] = [
+            dict[str, Any](json.loads(item.activity_json))
+            for item in items
+            if json.loads(item.activity_json).get("type") == "Accept"
+        ]
+        assert accept_items, (
+            f"No Accept activity found in DeliveryQueue. "
+            f"Found types: {[json.loads(i.activity_json).get('type') for i in items]}"
+        )
+        return accept_items[0]
+
+    async def test_accept_follow_uses_array_context(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Accept{Follow} must use a two-element @context array, not a plain string.
+
+        A single-string ``"https://www.w3.org/ns/activitystreams"`` context strips
+        the security vocabulary and may cause Mastodon to reject or misparse the
+        Accept activity.  The canonical form used by every other activity in the
+        codebase is ``["https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1"]``.
+        """
+        public_pem, private_pem = remote_keypair
+        accept_payload = await self._send_follow_and_get_accept_payload(
+            app,
+            public_pem,
+            private_pem,
+            follow_id=f"{REMOTE_ACTOR_URI}/activities/follow/ctx-test",
+        )
+
+        assert accept_payload["type"] == "Accept"
+        ctx = accept_payload.get("@context")
+        assert isinstance(ctx, list), (
+            f"Accept{{Follow}} @context must be a list, got {type(ctx).__name__}: {ctx!r}"
+        )
+        assert "https://www.w3.org/ns/activitystreams" in ctx
+        assert "https://w3id.org/security/v1" in ctx
+
+    async def test_accept_follow_context_is_not_plain_string(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Accept{Follow} @context must not be a plain string (regression guard)."""
+        public_pem, private_pem = remote_keypair
+        accept_payload = await self._send_follow_and_get_accept_payload(
+            app,
+            public_pem,
+            private_pem,
+            follow_id=f"{REMOTE_ACTOR_URI}/activities/follow/str-ctx-test",
+        )
+
+        ctx = accept_payload.get("@context")
+        assert not isinstance(ctx, str), (
+            "Accept{Follow} @context must not be a plain string — "
+            "Mastodon requires the array form including the security vocab."
+        )
+
+
+class TestDeleteFromGoneActor:
+    """Tests for graceful handling of Delete activities from removed/gone actors.
+
+    Per the ActivityPub spec and Mastodon behaviour, Delete activities sent
+    by actors whose profile has been removed will fail signature verification
+    because the public key can no longer be fetched.  The inbox must accept
+    and discard these (202) rather than returning 401, which would trigger
+    unnecessary retry storms from the remote server.
+    """
+
+    async def test_delete_from_gone_actor_returns_202(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Delete from an actor with no cached key and unfetchable document → 202."""
+        _, private_pem = remote_keypair
+        # Deliberately do NOT seed the remote actor — no cached public key.
+
+        gone_actor_uri = "https://gone.example.com/users/deleted"
+        gone_key_id = f"{gone_actor_uri}#main-key"
+        gone_inbox_full = f"https://{LOCAL_DOMAIN}{INBOX_PATH}"
+
+        body = json.dumps(
+            {
+                "type": "Delete",
+                "id": f"{gone_actor_uri}/activities/delete/1",
+                "actor": gone_actor_uri,
+                "object": {
+                    "id": f"{gone_actor_uri}/posts/1",
+                    "type": "Tombstone",
+                },
+            }
+        ).encode()
+
+        sig_headers = sign_request(
+            method="POST",
+            url=gone_inbox_full,
+            body=body,
+            private_key_pem=private_pem,
+            key_id=gone_key_id,
+        )
+
+        # Both the initial get_public_key lookup and the refresh attempt return
+        # None — simulates the actor being permanently gone/unreachable.
+        with (
+            patch(
+                "app.services.remote_actor.RemoteActorService.get_public_key",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.remote_actor.RemoteActorService.refresh",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            client = app.test_client()
+            resp = await client.post(
+                INBOX_PATH,
+                data=body,
+                headers={**sig_headers, "Content-Type": "application/activity+json"},
+            )
+
+        assert resp.status_code == 202, (
+            f"Expected 202 for Delete from gone actor, got {resp.status_code}. "
+            "Delete from a removed actor must be discarded gracefully, not rejected."
+        )
+
+    async def test_delete_with_invalid_sig_from_known_actor_returns_401(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+        wrong_keypair: tuple[str, str],
+    ) -> None:
+        """Delete signed with wrong key for a known actor still returns 401.
+
+        Only an *unfetchable* actor (gone entirely) gets the graceful 202.
+        A known actor signing with the wrong key is a genuine security failure
+        and must be rejected.
+        """
+        public_pem, _correct_private_pem = remote_keypair
+        _, wrong_private_pem = wrong_keypair
+        await _seed_remote_actor(app, public_pem)
+
+        body = json.dumps(
+            {
+                "type": "Delete",
+                "id": f"{REMOTE_ACTOR_URI}/activities/delete/bad-sig",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "id": f"{REMOTE_ACTOR_URI}/posts/99",
+                    "type": "Tombstone",
+                },
+            }
+        ).encode()
+
+        # Sign with the *wrong* key so verification fails, but the actor IS known.
+        headers = _signed_headers(body, wrong_private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 401, (
+            f"Expected 401 for Delete with invalid signature from known actor, "
+            f"got {resp.status_code}."
+        )
+
+    async def test_non_delete_from_gone_actor_returns_401(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Non-Delete activity from unfetchable actor still returns 401.
+
+        The graceful 202 is reserved for Delete activities specifically —
+        other activity types from unverifiable actors must be rejected.
+        """
+        _, private_pem = remote_keypair
+        # Do NOT seed the remote actor.
+
+        gone_actor_uri = "https://gone.example.com/users/mystery"
+        gone_key_id = f"{gone_actor_uri}#main-key"
+        gone_inbox_full = f"https://{LOCAL_DOMAIN}{INBOX_PATH}"
+
+        body = json.dumps(
+            {
+                "type": "Follow",
+                "id": f"{gone_actor_uri}/activities/follow/1",
+                "actor": gone_actor_uri,
+                "object": LOCAL_ACTOR_URI,
+            }
+        ).encode()
+
+        sig_headers = sign_request(
+            method="POST",
+            url=gone_inbox_full,
+            body=body,
+            private_key_pem=private_pem,
+            key_id=gone_key_id,
+        )
+
+        with (
+            patch(
+                "app.services.remote_actor.RemoteActorService.get_public_key",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.remote_actor.RemoteActorService.refresh",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            client = app.test_client()
+            resp = await client.post(
+                INBOX_PATH,
+                data=body,
+                headers={**sig_headers, "Content-Type": "application/activity+json"},
+            )
+
+        assert resp.status_code == 401, (
+            f"Expected 401 for non-Delete from unverifiable actor, got {resp.status_code}."
+        )
+
+
 class TestRateLimit:
     """Tests for the inbox per-IP rate limit."""
 

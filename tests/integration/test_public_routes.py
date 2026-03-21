@@ -127,11 +127,16 @@ class TestWebFinger:
 
         data = await response.get_json()
         assert data["subject"] == "acct:testuser@test.example.com"
-        assert len(data["links"]) == 1
-        link = data["links"][0]
-        assert link["rel"] == "self"
-        assert link["type"] == "application/activity+json"
-        assert link["href"] == "https://test.example.com/testuser"
+        assert data["aliases"] == ["https://test.example.com/testuser"]
+        assert len(data["links"]) == 2
+        self_link = data["links"][0]
+        assert self_link["rel"] == "self"
+        assert self_link["type"] == "application/activity+json"
+        assert self_link["href"] == "https://test.example.com/testuser"
+        profile_link = data["links"][1]
+        assert profile_link["rel"] == "http://webfinger.net/rel/profile-page"
+        assert profile_link["type"] == "text/html"
+        assert profile_link["href"] == "https://test.example.com/@testuser"
 
     async def test_returns_404_for_unknown_user(self, client: Any) -> None:
         response = await client.get("/.well-known/webfinger?resource=acct:nobody@test.example.com")
@@ -539,3 +544,68 @@ class TestWebFingerActorRoundTrip:
         assert actor_data["id"] == actor_url
         assert actor_data["type"] == "Person"
         assert "publicKey" in actor_data
+
+
+# ---------------------------------------------------------------------------
+# Vary: Accept header (content negotiation correctness)
+# ---------------------------------------------------------------------------
+
+
+class TestVaryHeader:
+    """Verify that content-negotiated actor profile responses include Vary: Accept.
+
+    Without ``Vary: Accept``, an intermediate cache (e.g. Caddy) may serve a
+    cached HTML response to a Mastodon AP fetch, or vice versa — a silent
+    federation failure with no error logged anywhere.
+    """
+
+    async def test_json_ld_response_includes_vary_accept(self, client: Any) -> None:
+        """AP JSON-LD actor response carries Vary: Accept."""
+        with patch(
+            "app.services.keypair.KeypairService.get_public_key",
+            _mock_keypair_get_public_key(),
+        ):
+            response = await client.get(
+                "/testuser",
+                headers={"Accept": "application/activity+json"},
+            )
+
+        assert response.status_code == 200
+        vary = response.headers.get("Vary", "")
+        assert "Accept" in vary, f"Expected 'Accept' in Vary header, got: {vary!r}"
+
+    async def test_html_response_includes_vary_accept(self, client: Any) -> None:
+        """Browser HTML actor response carries Vary: Accept."""
+        response = await client.get(
+            "/testuser",
+            headers={"Accept": "text/html"},
+        )
+
+        assert response.status_code == 200
+        vary = response.headers.get("Vary", "")
+        assert "Accept" in vary, f"Expected 'Accept' in Vary header, got: {vary!r}"
+
+    async def test_vary_header_present_with_no_accept(self, client: Any) -> None:
+        """Actor profile response without an Accept header still carries Vary: Accept."""
+        response = await client.get("/testuser")
+
+        assert response.status_code == 200
+        vary = response.headers.get("Vary", "")
+        assert "Accept" in vary, f"Expected 'Accept' in Vary header, got: {vary!r}"
+
+    async def test_vary_header_present_for_ld_json_accept(self, client: Any) -> None:
+        """AP ld+json actor response also carries Vary: Accept."""
+        with patch(
+            "app.services.keypair.KeypairService.get_public_key",
+            _mock_keypair_get_public_key(),
+        ):
+            response = await client.get(
+                "/testuser",
+                headers={
+                    "Accept": 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
+                },
+            )
+
+        assert response.status_code == 200
+        vary = response.headers.get("Vary", "")
+        assert "Accept" in vary, f"Expected 'Accept' in Vary header, got: {vary!r}"
