@@ -67,7 +67,8 @@ tinker/
 │   │   ├── signatures.py    # HTTP Signature sign/verify (draft-cavage, RSA-SHA256)
 │   │   ├── inbox.py         # Incoming activity processing (WP-10)
 │   │   ├── outbox.py        # Outgoing activity creation & delivery (WP-08/09)
-│   │   └── delivery.py      # Fan-out, retry, dead instance detection (WP-09)
+│   │   ├── delivery.py      # Fan-out, retry, dead instance detection (WP-09)
+│   │   └── follow.py        # Outgoing Follow/Undo{Follow} service (WP-11)
 │   ├── admin/               # Admin interface
 │   │   ├── auth.py          # Login, logout, session, CSRF, rate limiting, require_auth
 │   │   ├── routes.py        # Auth-gated admin page routes (/admin/*)
@@ -92,9 +93,12 @@ tinker/
 ├── media/                   # Uploaded images (optimised) + cached avatars
 ├── tests/
 │   ├── unit/                # test_app_factory, test_auth, test_config, test_database,
-│   │                        #   test_keypair_service, test_remote_actor_service,
-│   │                        #   test_repositories, test_settings_service, test_signatures
-│   └── integration/         # test_auth_routes, test_public_routes, test_signature_refetch
+│   │                        #   test_follow_builders, test_keypair_service,
+│   │                        #   test_remote_actor_service, test_repositories,
+│   │                        #   test_settings_service, test_signatures
+│   └── integration/         # test_auth_routes, test_follow, test_public_routes,
+│                            #   test_signature_refetch, test_note_routes,
+│                            #   test_delivery_pipeline, test_inbox
 ├── alembic/
 │   └── versions/            # 001_initial_schema — all 11 tables
 ├── docs/

@@ -203,15 +203,15 @@ Receive and process incoming activities from remote servers.
 
 ---
 
-## WP-11: Followers + Following Management
+## WP-11: Followers + Following Management ✅
 
 Outgoing follow requests and collection endpoints.
 
-- [ ] Follow service: send `Follow` activity to remote actor's inbox (§4.5)
-- [ ] Unfollow: send `Undo{Follow}` (§4.5)
-- [ ] Followers collection endpoint at `GET /{username}/followers` (§4.6): paginated OrderedCollection
-- [ ] Following collection endpoint at `GET /{username}/following` (§4.6): paginated OrderedCollection
-- [ ] Integration test: follow mock actor → verify Follow arrives → mock sends Accept → verify following status updated
+- [x] Follow service: send `Follow` activity to remote actor's inbox (§4.5)
+- [x] Unfollow: send `Undo{Follow}` (§4.5)
+- [x] Followers collection endpoint at `GET /{username}/followers` (§4.6): paginated OrderedCollection
+- [x] Following collection endpoint at `GET /{username}/following` (§4.6): paginated OrderedCollection
+- [x] Integration test: follow mock actor → verify Follow arrives → mock sends Accept → verify following status updated
 
 **Produces:** Can follow/unfollow remote actors. Collection endpoints work for federation.
 

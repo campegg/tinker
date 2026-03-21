@@ -20,6 +20,8 @@ from app.federation.actor import build_actor_document
 from app.federation.inbox import InboxContext, check_inbox_rate_limit, process_activity
 from app.federation.outbox import AP_CONTEXT, build_create_activity, build_note_object
 from app.federation.signatures import extract_key_id, verify_signature
+from app.repositories.follower import FollowerRepository
+from app.repositories.following import FollowingRepository
 from app.repositories.note import NoteRepository
 from app.services.remote_actor import RemoteActorService
 from app.services.settings import SettingsService
@@ -474,6 +476,157 @@ async def outbox(username: str) -> Response:
     if len(notes) == _OUTBOX_PAGE_SIZE:
         oldest = notes[-1]
         page_doc["next"] = f"{outbox_url}?max_id={oldest.ap_id}&page=true"
+
+    return Response(
+        response=_json_dumps(page_doc),
+        status=200,
+        content_type=_AP_CONTENT_TYPE,
+    )
+
+
+_COLLECTION_PAGE_SIZE = 50
+
+
+@public.route("/<username>/followers", methods=["GET"])
+async def followers_collection(username: str) -> Response:
+    """Serve the ActivityPub followers collection.
+
+    Returns an ``OrderedCollection`` root document when no ``page`` parameter
+    is present, or an ``OrderedCollectionPage`` when ``?page=N`` is given.
+    Items are actor URIs (strings) ordered newest-first.
+
+    Args:
+        username: The username path segment from the URL.
+
+    Returns:
+        A JSON-LD ``application/activity+json`` response.
+    """
+    configured_username: str = current_app.config["TINKER_USERNAME"]
+    if username != configured_username:
+        abort(404)
+
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    actor_uri = f"https://{domain}/{username}"
+    collection_url = f"{actor_uri}/followers"
+
+    session: AsyncSession = g.db_session
+    repo = FollowerRepository(session)
+
+    page_param = request.args.get("page")
+
+    if page_param is None:
+        total = await repo.count_accepted()
+        last_offset = max(0, ((total - 1) // _COLLECTION_PAGE_SIZE)) + 1
+        body: dict[str, Any] = {
+            "@context": AP_CONTEXT,
+            "id": collection_url,
+            "type": "OrderedCollection",
+            "totalItems": total,
+            "first": f"{collection_url}?page=1",
+            "last": f"{collection_url}?page={last_offset}",
+        }
+        return Response(
+            response=_json_dumps(body),
+            status=200,
+            content_type=_AP_CONTENT_TYPE,
+        )
+
+    try:
+        page_num = int(page_param)
+    except ValueError:
+        abort(400)
+
+    if page_num < 1:
+        abort(400)
+
+    offset = (page_num - 1) * _COLLECTION_PAGE_SIZE
+    items = await repo.get_accepted(limit=_COLLECTION_PAGE_SIZE, offset=offset)
+
+    page_doc: dict[str, Any] = {
+        "@context": AP_CONTEXT,
+        "id": f"{collection_url}?page={page_num}",
+        "type": "OrderedCollectionPage",
+        "partOf": collection_url,
+        "orderedItems": [f.actor_uri for f in items],
+    }
+    if page_num > 1:
+        page_doc["prev"] = f"{collection_url}?page={page_num - 1}"
+    if len(items) == _COLLECTION_PAGE_SIZE:
+        page_doc["next"] = f"{collection_url}?page={page_num + 1}"
+
+    return Response(
+        response=_json_dumps(page_doc),
+        status=200,
+        content_type=_AP_CONTENT_TYPE,
+    )
+
+
+@public.route("/<username>/following", methods=["GET"])
+async def following_collection(username: str) -> Response:
+    """Serve the ActivityPub following collection.
+
+    Returns an ``OrderedCollection`` root document when no ``page`` parameter
+    is present, or an ``OrderedCollectionPage`` when ``?page=N`` is given.
+    Items are actor URIs (strings) ordered newest-first.
+
+    Args:
+        username: The username path segment from the URL.
+
+    Returns:
+        A JSON-LD ``application/activity+json`` response.
+    """
+    configured_username: str = current_app.config["TINKER_USERNAME"]
+    if username != configured_username:
+        abort(404)
+
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    actor_uri = f"https://{domain}/{username}"
+    collection_url = f"{actor_uri}/following"
+
+    session: AsyncSession = g.db_session
+    repo = FollowingRepository(session)
+
+    page_param = request.args.get("page")
+
+    if page_param is None:
+        total = await repo.count_accepted()
+        last_offset = max(0, ((total - 1) // _COLLECTION_PAGE_SIZE)) + 1
+        body: dict[str, Any] = {
+            "@context": AP_CONTEXT,
+            "id": collection_url,
+            "type": "OrderedCollection",
+            "totalItems": total,
+            "first": f"{collection_url}?page=1",
+            "last": f"{collection_url}?page={last_offset}",
+        }
+        return Response(
+            response=_json_dumps(body),
+            status=200,
+            content_type=_AP_CONTENT_TYPE,
+        )
+
+    try:
+        page_num = int(page_param)
+    except ValueError:
+        abort(400)
+
+    if page_num < 1:
+        abort(400)
+
+    offset = (page_num - 1) * _COLLECTION_PAGE_SIZE
+    items = await repo.get_accepted(limit=_COLLECTION_PAGE_SIZE, offset=offset)
+
+    page_doc: dict[str, Any] = {
+        "@context": AP_CONTEXT,
+        "id": f"{collection_url}?page={page_num}",
+        "type": "OrderedCollectionPage",
+        "partOf": collection_url,
+        "orderedItems": [f.actor_uri for f in items],
+    }
+    if page_num > 1:
+        page_doc["prev"] = f"{collection_url}?page={page_num - 1}"
+    if len(items) == _COLLECTION_PAGE_SIZE:
+        page_doc["next"] = f"{collection_url}?page={page_num + 1}"
 
     return Response(
         response=_json_dumps(page_doc),

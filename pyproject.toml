@@ -102,6 +102,15 @@ filterwarnings = [
     # artefact — it cannot happen in production where a single long-lived
     # event loop runs for the lifetime of the process.
     "ignore::pytest.PytestUnhandledThreadExceptionWarning",
+    # Background delivery tasks (asyncio.create_task) may still be pending
+    # when a per-test event loop closes.  Python's GC then destroys the task
+    # and its coroutine frames without awaiting them, triggering an
+    # "unraisable exception" warning for any coroutine that was never awaited
+    # during teardown (e.g. AsyncSession.close inside _deliver_task).
+    # Again, a test-environment artefact: in production the event loop runs
+    # for the full process lifetime and tasks are always awaited or cancelled
+    # cleanly during shutdown.
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.hatch.build.targets.wheel]
