@@ -238,11 +238,11 @@ Notifications are stored in the database and served via a paginated JSON API end
 
 Each additional view is a static HTML shell that loads Web Components to fetch data from admin JSON API endpoints.
 
-- **Profile:** View and edit your own actor profile (name, bio, avatar). Edits update the database settings table (§8.2), which propagates to the public profile page and actor document. The profile tab also shows the user's own published notes below the edit form, with Edit and Delete controls on each.
+- **Profile:** View and edit your own actor profile (name, bio, avatar, header image). The top of the profile edit form uses an `<actor-banner>` Web Component in `editable` mode — clicking either the banner or the avatar opens a file picker to replace that image independently. Edits update the database settings table (§8.2), which propagates to the public profile page and actor document. The profile tab also shows the user's own published notes below the edit form, with Edit and Delete controls on each.
 - **Following / Followers:** Lists with Unfollow / Remove actions.
 - **Likes:** Posts you have liked.
 - **Search:** Remote actor lookup implemented as a **modal overlay** triggered from a search icon button in the admin navigation — not a separate page. The modal contains an input field for `@user@domain`, fetches the remote actor via WebFinger on submit, and displays a profile card with a Follow button on match or a "no result" message on failure.
-- **Remote actor profile modal:** Clicking any actor name, handle, or avatar anywhere in the admin interface (timeline, notifications, followers, following, likes) opens a modal overlay showing that actor's profile background, avatar, display name, handle, bio, and a Follow/Unfollow button. This is a shared `<actor-profile-modal>` Web Component triggered from within other components.
+- **Remote actor profile modal:** Clicking any actor name, handle, or avatar anywhere in the admin interface (timeline, notifications, followers, following, likes) opens a modal overlay. The modal (`<actor-profile-modal>`) renders a `<profile-card>` — a reusable component containing an `<actor-banner mode="static">` (banner + avatar in display-only mode), display name, handle, bio, and a `<follow-button>`. The same `<profile-card>` component, in `public` mode, is also used on the public-facing profile page.
 
 ### 5.7 Interaction Model
 
@@ -257,6 +257,249 @@ Public pages (`/`, `/{actor}`, `/login`) are **not** part of the admin interface
 - **Image upload:** Uses `fetch()` with `FormData`. The upload component shows a client-side preview before submission.
 - **Notification badges:** A `<notification-badge>` Web Component owns the SSE `EventSource` connection, initialises its count from the unread count API endpoint, increments on each SSE event, and resets to zero when it receives a `notifications-read` DOM event (dispatched by `<notification-list>` after marking all read).
 - **JS constraints:** Vanilla JavaScript only. No framework, no module bundler, no TypeScript. No build step. JS files served as static assets from `static/js/`. Progressive enhancement where feasible.
+
+### 5.8 Web Component Reference
+
+All Web Components live in `static/js/components/`. They are grouped here by build order: foundational leaf components first, then composites, then view/container components.
+
+**Data sourcing pattern:** `<actor-identity>` and other display components are always told what to render — they never fetch data themselves. Data reaches them one of two ways:
+
+- **Remote actor data** flows down from a parent container component (e.g., `<timeline-view>` fetches a list of posts from the JSON API and passes each author's name, handle, and avatar as attributes to the `<status-item>` and `<actor-identity>` components it renders).
+- **Local user data** (nav bar avatar, profile edit heading) is injected server-side by Quart when it serves the admin HTML shell, as attributes on the relevant component (e.g., `<nav-bar user-name="..." user-handle="..." user-avatar="...">`). This avoids an extra API call on every page load and is consistent with how the public profile page already works.
+
+The public profile page (`/{actor}`) does not use Web Components at all — it is a static HTML file with content injected at serve time via string interpolation.
+
+---
+
+#### Foundational leaf components (WP-13)
+
+These have no Web Component dependencies and are built first.
+
+---
+
+**`<actor-identity>`** — avatar, display name, and handle grouped as a single unit.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `src` | string | Avatar image URL |
+| `name` | string | Display name |
+| `handle` | string | Full handle, e.g. `@user@domain` |
+| `size` | `sm` \| `md` \| `lg` | Visual size variant |
+
+Internal state: none. No API calls.
+
+---
+
+**`<follow-button>`** — Follow / Unfollow pill toggle.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `handle` | string | Actor handle used in the API call |
+| `followed` | boolean | Initial follow state |
+
+Internal state: current follow state (toggled on success), loading/pending flag.
+API calls: `POST /admin/api/follow` / `POST /admin/api/unfollow`.
+Fires: `follow` and `unfollow` custom DOM events (for parent components to react).
+
+---
+
+**`<actor-banner>`** — banner image with avatar anchored 24 px from the bottom-left.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `banner-src` | string | Banner image URL |
+| `avatar-src` | string | Avatar image URL |
+| `mode` | `static` \| `editable` | Display-only or click-to-replace |
+
+Internal state (`editable` mode only): upload-in-progress flag and error state, tracked independently for banner and avatar.
+API calls (`editable` mode): `POST /admin/api/upload` for each image replacement.
+
+---
+
+**`<notification-badge>`** — unread notification count pill (WP-16).
+
+No HTML attributes. Manages its own data entirely.
+
+Internal state: unread count integer, SSE `EventSource` connection.
+API calls: `GET /admin/api/notifications/unread-count` on init.
+Listens for: `notifications-read` DOM event on `document` (resets count to zero).
+SSE: increments count by one for each incoming event; reconnects automatically on disconnect.
+
+---
+
+#### Composite components
+
+Built after the leaf components they depend on.
+
+---
+
+**`<nav-bar>`** — primary admin navigation bar (WP-13).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `active` | string | Name of the currently active view (e.g. `timeline`, `notifications`) |
+| `user-name` | string | Local user's display name (injected server-side) |
+| `user-handle` | string | Local user's full handle (injected server-side) |
+| `user-avatar` | string | Local user's avatar URL (injected server-side) |
+
+Internal state: none beyond the attribute values.
+Contains `<notification-badge>` as a child element; the badge manages its own state.
+Passes `user-name`, `user-handle`, and `user-avatar` into an internal `<actor-identity>` — no API call required.
+
+---
+
+**`<status-item>`** — a single post in the timeline, likes, or profile view (WP-13).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `post-id` | string | Local or remote post identifier |
+| `author-name` | string | Author display name |
+| `author-handle` | string | Author handle |
+| `author-avatar` | string | Author avatar URL |
+| `published` | string | ISO 8601 timestamp |
+| `body` | string | Rendered HTML content |
+| `liked` | boolean | Whether the local user has liked this post |
+| `like-count` | number | Total like count |
+| `reposted` | boolean | Whether the local user has reposted this post |
+| `repost-count` | number | Total repost count |
+| `reply-count` | number | Total reply count |
+| `own` | boolean | Whether this post belongs to the local user (shows Edit and Delete) |
+| `media-url` | string | Optional attached image URL |
+
+Internal state: like/repost toggle state, edit form open/closed, inline reply compose open/closed.
+Fires: `like-toggled`, `repost-toggled`, `reply-submitted`, `edit-submitted`, `delete-confirmed`.
+Composes: `<actor-identity>` for the author header.
+
+---
+
+**`<compose-box>`** — post compose form (WP-13; media wired in WP-14).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `in-reply-to` | string | Optional AP URI of the post being replied to |
+
+Internal state: text content, attached media file list, character count, submit-in-progress flag.
+Fires: `post-submitted` with the new post payload.
+
+---
+
+**`<person-row>`** — a single actor row for list views (WP-18).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `name` | string | Display name |
+| `handle` | string | Full handle |
+| `avatar` | string | Avatar image URL |
+| `followed` | boolean | Current follow state |
+
+Internal state: delegated entirely to child `<follow-button>`.
+Composes: `<actor-identity>`, `<follow-button>`.
+
+---
+
+**`<notification-item>`** — a single notification row (WP-17).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `type` | `follow` \| `reply` | Controls which variant is rendered |
+| `actor-name` | string | Notifying actor's display name |
+| `actor-handle` | string | Notifying actor's handle |
+| `actor-avatar` | string | Notifying actor's avatar URL |
+| `actor-followed` | boolean | Whether the local user already follows this actor |
+| `published` | string | ISO 8601 timestamp |
+| `reply-body` | string | Rendered HTML of the reply (reply type only) |
+| `reply-id` | string | Post identifier for reply action icons (reply type only) |
+
+Internal state: delegated to child components.
+Composes: `<actor-identity>` (both types), `<follow-button>` (follow type only).
+
+---
+
+**`<profile-card>`** — actor profile card used in the profile modal and public profile page (WP-18).
+
+| Attribute | Type | Description |
+|---|---|---|
+| `name` | string | Display name |
+| `handle` | string | Full handle |
+| `avatar-src` | string | Avatar image URL |
+| `banner-src` | string | Header image URL |
+| `bio` | string | Rendered HTML biography |
+| `followed` | boolean | Current follow state |
+| `mode` | `modal` \| `public` | `modal`: interactive with `<follow-button>`; `public`: static display only, no JS interaction |
+
+Internal state: delegated to child components.
+Composes: `<actor-banner mode="static">`, `<actor-identity>`, `<follow-button>` (modal mode only).
+
+---
+
+**`<search-modal>`** — actor search overlay (WP-18).
+
+No persistent HTML attributes. Opened and closed programmatically.
+
+Internal state: open/closed flag, query string, search state (`idle` | `searching` | `results` | `empty`), result list (array of actor objects).
+API calls: actor WebFinger/search endpoint on submit.
+Keyboard: closes on Escape; input receives focus on open.
+Composes: `<person-row>` for each result.
+
+---
+
+**`<actor-profile-modal>`** — remote actor profile overlay (WP-18).
+
+No persistent HTML attributes.
+
+Internal state: open/closed flag, actor URI being displayed, fetched actor data.
+Listens for: `show-actor-profile` DOM event on `document` (payload: actor URI). Every other component that wants to surface an actor profile fires this event rather than opening the modal directly.
+API calls: `GET /admin/api/actor?uri={uri}` on open to fetch current actor data.
+Composes: `<profile-card mode="modal">`.
+
+---
+
+#### View / container components
+
+These fetch and manage lists of data; they contain the item-level components above.
+
+---
+
+**`<timeline-view>`** (WP-13) — fetches and displays the admin timeline.
+
+Internal state: ordered list of post items, latest item ID / timestamp for poll cursor, pagination cursor for "load more".
+API calls: `GET /admin/api/timeline` on init and on each poll interval; `GET /admin/api/timeline?since={id}` for incremental updates; cursor-based `GET /admin/api/timeline?max_id={id}` for pagination.
+Contains: `<status-item>` per post, `<compose-box>` at top.
+
+---
+
+**`<notification-list>`** (WP-17) — fetches and displays the notification history.
+
+Internal state: ordered list of notification items, pagination cursor.
+API calls: `GET /admin/api/notifications` on init; `POST /admin/api/notifications/mark-all-read` immediately after init.
+Fires: `notifications-read` DOM event on `document` after mark-all-read succeeds.
+Contains: `<notification-item>` per notification.
+
+---
+
+**`<following-list>`** (WP-18) — lists followed actors.
+
+Internal state: ordered list of actors, pagination cursor.
+API calls: `GET /admin/api/following`.
+Contains: `<person-row>` per actor.
+
+---
+
+**`<followers-list>`** (WP-18) — lists followers.
+
+Internal state: ordered list of actors, pagination cursor.
+API calls: `GET /admin/api/followers`.
+Contains: `<person-row>` per actor.
+
+---
+
+**`<likes-list>`** (WP-18) — lists liked posts.
+
+Internal state: ordered list of post items, pagination cursor.
+API calls: `GET /admin/api/likes`.
+Contains: `<status-item>` per post.
+
+---
 
 ## 6. Background Processing
 

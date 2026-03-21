@@ -246,11 +246,16 @@ The primary admin view — static HTML shell with Web Components fetching from a
 
 - [ ] **Base admin JSON API patterns:** define auth-protected JSON endpoints with consistent response envelope (e.g., `{ "data": [...], "cursor": ... }`)
 - [ ] **Base Web Component patterns:** establish a base component class or shared utilities (authenticated `fetch` wrapper, relative-time formatting, error handling); establish the shared modal event pattern — child components dispatch `show-actor-profile` DOM event with actor URI payload, single `<actor-profile-modal>` instance on each admin shell listens on `document` (§5.6)
+- [ ] **Foundational leaf components** (build before any composite or view-level component — used across multiple views):
+  - `<actor-identity>`: avatar + display name + handle grouping; `size` attribute (`sm` / `md` / `lg`); used in every component that displays an actor
+  - `<follow-button>`: Follow / Unfollow pill toggle; `handle` and `followed` attributes; dispatches `follow` / `unfollow` custom events and calls the follow/unfollow JSON API
+  - `<actor-banner>`: banner image with avatar anchored 24 px from the bottom-left; `mode` attribute (`static` for display-only contexts, `editable` for the profile edit view where clicking either image opens a file picker to replace it)
+- [ ] `<nav-bar>` Web Component: renders the admin navigation (Posts, Profile, Notifications, Likes, Following, Followers, search icon); `active` attribute highlights the current view; includes `<notification-badge>` as a child (built in WP-16 — renders empty until then); present in every admin HTML shell
 - [ ] Timeline JSON API endpoint (admin-protected): return timeline data as JSON — includes `TimelineItem` records and own notes, with like/boost state per item
 - [ ] `<timeline-view>` Web Component: fetches timeline JSON and renders the list of items
-- [ ] `<timeline-item>` Web Component: renders a single post — author avatar, display name, handle, relative timestamp, rendered content, media, boost attribution (§5.2)
-- [ ] Like/boost state indicators on each `<timeline-item>`
-- [ ] Edit/Delete buttons on own posts within `<timeline-item>`
+- [ ] `<status-item>` Web Component: renders a single post — author avatar (via `<actor-identity>`), relative timestamp, rendered content, media, boost attribution (§5.2); `own` boolean attribute shows Edit and Delete controls on own posts; used in the timeline, likes, and profile views
+- [ ] Like/boost state indicators on each `<status-item>`
+- [ ] Edit/Delete buttons on own posts within `<status-item>`
 - [ ] Polling: `<timeline-view>` polls the JSON endpoint for new items since the latest known ID/timestamp, prepends to DOM
 - [ ] "Load more" cursor-based pagination at bottom of `<timeline-view>`
 - [ ] `<compose-box>` Web Component at top (text-only initially — media wired in WP-14)
@@ -283,10 +288,10 @@ Full compose flow including image attachments. The `<compose-box>` component is 
 
 Like, reply, boost, edit, delete — all from the timeline via Web Components and JSON API.
 
-- [ ] Like/unlike toggle: `fetch()` call to JSON API → generate and deliver `Like` / `Undo{Like}` activity (§4.5), update `<timeline-item>` button state
-- [ ] Boost/unboost toggle: `fetch()` call to JSON API → generate and deliver `Announce` / `Undo{Announce}` activity (§4.5), update `<timeline-item>` button state
-- [ ] Reply: inline compose form within `<timeline-item>` → publish as `Create{Note}` with `inReplyTo` → deliver to author + followers (§4.5)
-- [ ] Edit own note: open edit form in `<timeline-item>` → update note via JSON API → deliver `Update{Note}` (§4.3)
+- [ ] Like/unlike toggle: `fetch()` call to JSON API → generate and deliver `Like` / `Undo{Like}` activity (§4.5), update `<status-item>` button state
+- [ ] Boost/unboost toggle: `fetch()` call to JSON API → generate and deliver `Announce` / `Undo{Announce}` activity (§4.5), update `<status-item>` button state
+- [ ] Reply: inline compose form within `<status-item>` → publish as `Create{Note}` with `inReplyTo` → deliver to author + followers (§4.5)
+- [ ] Edit own note: open edit form in `<status-item>` → update note via JSON API → deliver `Update{Note}` (§4.3)
 - [ ] Delete own note: confirm → delete note via JSON API → deliver `Delete` with Tombstone (§4.3)
 - [ ] Tests for each interaction type: JSON API call, activity generation, delivery
 
@@ -319,8 +324,8 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 
 - [ ] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination; join against `following` table to include `is_following` boolean per actor on each notification item
 - [ ] `<notification-list>` Web Component: fetches notifications JSON, renders the list, handles "load more" pagination
-- [ ] `<notification-item>` Web Component: renders a single notification — type, actor, object reference, timestamp
-- [ ] Follow notification items: include Follow button (not following back) or Unfollow text link (already following back) actionable inline (§5.5)
+- [ ] `<notification-item>` Web Component: renders a single notification — composes `<actor-identity>` for the actor header and (on follow notifications) `<follow-button>`; `type` attribute (`follow` / `reply`) controls variant
+- [ ] Follow notification items: include `<follow-button>` (not following back) or Unfollow text link (already following back) actionable inline (§5.5)
 - [ ] Reply notification items: display reply content in a styled container within the notification row, with like/reply/boost action icons (§5.5)
 - [ ] Mark-all-read API endpoint (`POST /admin/api/notifications/mark-all-read`): sets all `read = false` rows to `read = true`
 - [ ] `<notification-list>` calls mark-all-read on init, then dispatches `notifications-read` on `document` to reset `<notification-badge>` (§5.5)
@@ -337,13 +342,16 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 
 Profile editing, social graph management, liked posts, search — all as static HTML shells with Web Components backed by JSON API endpoints.
 
-- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, links (§5.6, §8.2); bio is edited as Markdown source and rendered to HTML (with typographic processing) on save — the rendered HTML is used for the public profile page injection and for the `summary` field in the actor document; own published notes listed below the edit form with Edit and Delete controls
-- [ ] Avatar upload: uses media upload pipeline from WP-12, wired into profile Web Component
-- [ ] **Following view:** static HTML shell + `<following-list>` Web Component + JSON API endpoint listing followed actors with Unfollow action
-- [ ] **Followers view:** static HTML shell + `<followers-list>` Web Component + JSON API endpoint listing followers with Remove action (sends `Reject` or `Block`? — decide and document)
-- [ ] **Likes view:** static HTML shell + `<likes-list>` Web Component + JSON API endpoint returning paginated liked posts
-- [ ] **Search modal:** `<actor-search>` Web Component rendered as a modal overlay triggered from the nav search icon button; input field for `@user@domain`, calls JSON API to fetch remote actor via WebFinger, displays profile card + Follow button on match, "no result" message on failure (§5.6)
-- [ ] **Remote actor profile modal:** `<actor-profile-modal>` Web Component — a modal overlay showing a remote actor's profile background, avatar, display name, handle, bio, and Follow/Unfollow button; triggered by clicking any actor name, handle, or avatar in the admin interface (§5.6)
+- [ ] **WP-18 composite components** (build before the views that use them):
+  - `<person-row>`: `<actor-identity>` + `<follow-button>` in a single row; used in the Following list, Followers list, and search results
+  - `<profile-card>`: `<actor-banner mode="static">` + `<actor-identity>` + bio paragraph + `<follow-button>`; `mode` attribute (`modal` for overlay contexts, `public` for the standalone public profile page)
+- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, header image, links (§5.6, §8.2); uses `<actor-banner mode="editable">` at the top of the form (click banner or avatar to replace); bio is edited as Markdown source and rendered to HTML (with typographic processing) on save — the rendered HTML is used for the public profile page injection and for the `summary` field in the actor document; own published notes listed below the edit form using `<status-item own>` with Edit and Delete controls
+- [ ] Banner and avatar upload: each handled via `<actor-banner mode="editable">`, uses media upload pipeline from WP-12
+- [ ] **Following view:** static HTML shell + `<following-list>` Web Component + JSON API endpoint; each row rendered as `<person-row>` with Unfollow action
+- [ ] **Followers view:** static HTML shell + `<followers-list>` Web Component + JSON API endpoint; each row rendered as `<person-row>` with Remove action (sends `Reject` or `Block`? — decide and document)
+- [ ] **Likes view:** static HTML shell + `<likes-list>` Web Component + JSON API endpoint returning paginated liked posts; each item rendered as `<status-item>`
+- [ ] **Search modal:** `<search-modal>` Web Component rendered as a modal overlay triggered from the nav search icon button; input field for `@user@domain`, calls JSON API to fetch remote actor via WebFinger; displays `<person-row>` result(s) on match, "no result" message on failure (§5.6)
+- [ ] **Remote actor profile modal:** `<actor-profile-modal>` Web Component — a dark overlay containing a `<profile-card mode="modal">`; triggered by clicking any actor name, handle, or avatar in the admin interface (§5.6)
 - [ ] **"Follow me" link on public profile page:** add to `static/pages/profile.html` as part of this pass if not already done in WP-04
 - [ ] Tests for each JSON API endpoint and view
 
