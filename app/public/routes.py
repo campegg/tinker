@@ -1,27 +1,41 @@
 """Public routes for the Tinker microblog.
 
 Provides the public-facing HTTP endpoints including the actor profile page
-(with content negotiation for ActivityPub), WebFinger discovery, and NodeInfo
-metadata. These routes do not require authentication.
+(with content negotiation for ActivityPub), WebFinger discovery, NodeInfo
+metadata, and the ActivityPub inbox. These routes do not require
+authentication (the inbox verifies HTTP Signatures instead).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from quart import Blueprint, Response, abort, current_app, g, request
 
 from app.federation.actor import build_actor_document
+from app.federation.inbox import InboxContext, check_inbox_rate_limit, process_activity
 from app.federation.outbox import AP_CONTEXT, build_create_activity, build_note_object
+from app.federation.signatures import extract_key_id, verify_signature
 from app.repositories.note import NoteRepository
+from app.services.remote_actor import RemoteActorService
 from app.services.settings import SettingsService
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+# Maximum inbox request body size (1 MiB).
+_MAX_INBOX_BODY_BYTES = 1_048_576
+
 public = Blueprint("public", __name__)
+
+# Holds references to in-flight background inbox processing tasks so they
+# cannot be garbage-collected before completing.  Tasks remove themselves
+# via a done callback.
+_inbox_tasks: set[asyncio.Task[None]] = set()
 
 _AP_CONTENT_TYPE = "application/activity+json; charset=utf-8"
 _JRD_CONTENT_TYPE = "application/jrd+json; charset=utf-8"
@@ -466,6 +480,192 @@ async def outbox(username: str) -> Response:
         status=200,
         content_type=_AP_CONTENT_TYPE,
     )
+
+
+@public.route("/<username>/inbox", methods=["POST"])
+async def inbox(username: str) -> Response:
+    """Receive and process an incoming ActivityPub activity.
+
+    Security measures applied in order:
+
+    1. Username must match the configured local actor.
+    2. Per-IP rate limit (``429`` if exceeded).
+    3. Content-Length guard — requests over 1 MiB are rejected.
+    4. Body must be valid JSON.
+    5. HTTP Signature verified against the sender's cached public key;
+       if verification fails, the actor document is re-fetched once and
+       verification is retried (handles key rotation).
+    6. The ``actor`` field in the activity must match the actor URI
+       derived from the ``keyId`` (prevents actor-spoofing).
+    7. Activity must have non-empty ``type``, ``id``, and ``actor`` fields.
+
+    Returns ``202 Accepted`` immediately; all processing happens in a
+    background :func:`asyncio.create_task`.
+
+    Args:
+        username: The username path segment from the URL.
+
+    Returns:
+        ``202 Accepted`` on success, or an appropriate error status.
+    """
+    configured_username: str = current_app.config["TINKER_USERNAME"]
+    if username != configured_username:
+        abort(404)
+
+    # --- Rate limiting ---
+    client_ip: str = request.remote_addr or "unknown"
+    if not await check_inbox_rate_limit(client_ip):
+        return Response(
+            response=_json_dumps({"error": "Too many requests."}),
+            status=429,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # --- Body size guard ---
+    content_length = request.content_length
+    if content_length is not None and content_length > _MAX_INBOX_BODY_BYTES:
+        return Response(
+            response=_json_dumps({"error": "Request body too large."}),
+            status=413,
+            content_type="application/json; charset=utf-8",
+        )
+
+    raw_body = await request.get_data()
+    body: bytes = raw_body if isinstance(raw_body, bytes) else raw_body.encode("utf-8")
+    if len(body) > _MAX_INBOX_BODY_BYTES:
+        return Response(
+            response=_json_dumps({"error": "Request body too large."}),
+            status=413,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # --- Parse JSON ---
+    try:
+        activity: dict[str, Any] = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return Response(
+            response=_json_dumps({"error": "Invalid JSON."}),
+            status=400,
+            content_type="application/json; charset=utf-8",
+        )
+
+    if not isinstance(activity, dict):
+        return Response(
+            response=_json_dumps({"error": "Activity must be a JSON object."}),
+            status=400,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # --- Validate required fields ---
+    activity_type = activity.get("type")
+    activity_id = activity.get("id")
+    actor_field = activity.get("actor")
+    if (
+        not isinstance(activity_type, str)
+        or not activity_type
+        or not isinstance(activity_id, str)
+        or not activity_id
+        or not isinstance(actor_field, str)
+        or not actor_field
+    ):
+        return Response(
+            response=_json_dumps({"error": "Activity missing required fields."}),
+            status=400,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # --- HTTP Signature verification ---
+    signature_header = request.headers.get("Signature")
+    if not signature_header:
+        return Response(
+            response=_json_dumps({"error": "Missing Signature header."}),
+            status=401,
+            content_type="application/json; charset=utf-8",
+        )
+
+    key_id = extract_key_id(signature_header)
+    if not key_id:
+        return Response(
+            response=_json_dumps({"error": "Cannot extract keyId from Signature."}),
+            status=401,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # Derive the actor URI from the keyId (strip fragment).
+    parsed_key_id = urlparse(key_id)
+    key_owner_uri = parsed_key_id._replace(fragment="").geturl()
+
+    session: AsyncSession = g.db_session
+    actor_svc = RemoteActorService(session)
+
+    # Try verification with cached key, then re-fetch on failure.
+    public_key_pem = await actor_svc.get_public_key(key_owner_uri)
+    verified = False
+    if public_key_pem:
+        verified = verify_signature(
+            method=request.method,
+            path=request.full_path if request.query_string else request.path,
+            headers=dict(request.headers),
+            body=body,
+            public_key_pem=public_key_pem,
+        )
+
+    if not verified:
+        # Re-fetch actor document and retry once (handles key rotation).
+        refreshed = await actor_svc.refresh(key_owner_uri)
+        if refreshed and refreshed.public_key:
+            verified = verify_signature(
+                method=request.method,
+                path=request.full_path if request.query_string else request.path,
+                headers=dict(request.headers),
+                body=body,
+                public_key_pem=refreshed.public_key,
+            )
+
+    if not verified:
+        return Response(
+            response=_json_dumps({"error": "Signature verification failed."}),
+            status=401,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # --- Actor spoofing check ---
+    # The actor in the activity must be the same entity that signed the request.
+    if actor_field != key_owner_uri:
+        return Response(
+            response=_json_dumps({"error": "Activity actor does not match request signer."}),
+            status=403,
+            content_type="application/json; charset=utf-8",
+        )
+
+    # --- Dispatch to background processing ---
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    private_key_pem: str = current_app.config.get("INBOX_PRIVATE_KEY_PEM", "")
+    signing_key_id: str = current_app.config.get("INBOX_KEY_ID", "")
+    semaphore: asyncio.Semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+    session_factory = current_app.config["DB_SESSION_FACTORY"]
+    notification_queue: asyncio.Queue[dict[str, Any]] = current_app.config["NOTIFICATION_QUEUE"]
+
+    ctx = InboxContext(
+        session_factory=session_factory,
+        private_key_pem=private_key_pem,
+        key_id=signing_key_id,
+        semaphore=semaphore,
+        domain=domain,
+        username=configured_username,
+        notification_queue=notification_queue,
+    )
+
+    # Store a reference in the module-level set so the task is not
+    # garbage-collected before it completes; it removes itself when done.
+    _task = asyncio.create_task(
+        process_activity(activity, key_owner_uri, ctx),
+        name=f"inbox-{activity_id}",
+    )
+    _inbox_tasks.add(_task)
+    _task.add_done_callback(_inbox_tasks.discard)
+
+    return Response(response="", status=202)
 
 
 def _json_dumps(obj: dict[str, Any]) -> str:
