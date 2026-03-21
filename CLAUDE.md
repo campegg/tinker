@@ -319,6 +319,16 @@ UUIDs for all primary keys. Sequential IDs leak content volume and are incompati
 
 Hard deletes only — no soft delete or archive pattern. When a note is deleted locally, a `Delete` activity with `Tombstone` is sent to followers.
 
+### Notes
+
+Note body text is Markdown source rendered to HTML. Typographic processing must be applied at render time, following the rules of a utility like SmartyPants:
+
+- Straight quotes (`"`, `'`) → curly/smart quotes (`"…"`, `'…'`)
+- `--` → en dash (–); `---` → em dash (—)
+- `...` → ellipsis (…)
+
+The rendered HTML stored in `body_html` must contain the typographically processed output. Raw Markdown source is preserved separately in `body` for editing and federation.
+
 ### Media
 
 - Uploaded to the configured media directory.
