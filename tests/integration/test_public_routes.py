@@ -448,7 +448,7 @@ class TestProfileHTMLPage:
         body = await response.get_data(as_text=True)
         # The follow link must be present and point to the actor's AP URI.
         assert 'href="https://test.example.com/testuser"' in body
-        assert "Follow me" in body
+        assert "Follow Me" in body
 
     async def test_returns_404_for_wrong_username_html(self, client: Any) -> None:
         response = await client.get(
