@@ -1,68 +1,83 @@
-/** Home page icon interaction and handle text dissolve. */
+/** Home page icon interaction and handle text fade. */
 
 const STATES = {
-    mail: "cam@campegg.com",
-    mastodon: "@cam@campegg.com",
-    bluesky: "@campegg.com",
+  mail: "cam@campegg.com",
+  mastodon: "@cam@campegg.com",
+  bluesky: "@campegg.com",
 };
 
 const DEFAULT_ICON = "mail";
 
 let currentIcon = DEFAULT_ICON;
-let animating = false;
+let isFading = false;
+let pendingText = null;
 
 const handle = document.querySelector(".home-handle");
 const buttons = document.querySelectorAll(".icon-btn[data-icon]");
 
 function setActive(iconName) {
-    buttons.forEach((btn) => {
-        btn.classList.toggle("is-active", btn.dataset.icon === iconName);
-    });
+  buttons.forEach((btn) => {
+    btn.classList.toggle("is-active", btn.dataset.icon === iconName);
+  });
 }
 
 function switchHandle(newText) {
-    if (animating) {
-        handle.style.minWidth = "";
-        handle.classList.remove("is-fading-out", "is-fading-in");
-    }
+  // Always record the most recently requested text so a click during a
+  // fade-out picks up the right string when the transition completes.
+  pendingText = newText;
 
-    // Lock width during transition so centering doesn't jump.
-    handle.style.minWidth = handle.offsetWidth + "px";
+  // If already fading, let the in-flight transitionend handlers pick up
+  // pendingText when they finish rather than starting a second sequence.
+  if (isFading) return;
 
-    animating = true;
-    handle.classList.add("is-fading-out");
+  isFading = true;
 
-    handle.addEventListener(
-        "animationend",
+  // Lock width so the container doesn't reflow while the text is invisible.
+  handle.style.minWidth = `${handle.offsetWidth}px`;
+  handle.style.opacity = "0";
+
+  handle.addEventListener(
+    "transitionend",
+    () => {
+      // Swap to whatever was most recently requested.
+      handle.textContent = pendingText;
+      pendingText = null;
+
+      // Force a reflow so the browser commits the text change and
+      // opacity=0 before we set opacity=1, ensuring the transition fires.
+      void handle.offsetWidth;
+
+      handle.style.opacity = "1";
+
+      handle.addEventListener(
+        "transitionend",
         () => {
-            handle.textContent = newText;
-            handle.classList.remove("is-fading-out");
-            handle.classList.add("is-fading-in");
+          handle.style.minWidth = "";
+          isFading = false;
 
-            handle.addEventListener(
-                "animationend",
-                () => {
-                    handle.classList.remove("is-fading-in");
-                    handle.style.minWidth = "";
-                    animating = false;
-                },
-                { once: true },
-            );
+          // A click arrived while we were fading in — process it now.
+          if (pendingText !== null) {
+            const queued = pendingText;
+            pendingText = null;
+            switchHandle(queued);
+          }
         },
         { once: true },
-    );
+      );
+    },
+    { once: true },
+  );
 }
 
 buttons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-        const iconName = btn.dataset.icon;
-        if (iconName === currentIcon) return;
+  btn.addEventListener("click", () => {
+    const iconName = btn.dataset.icon;
+    if (iconName === currentIcon) return;
 
-        currentIcon = iconName;
-        setActive(iconName);
-        switchHandle(STATES[iconName]);
-    });
+    currentIcon = iconName;
+    setActive(iconName);
+    switchHandle(STATES[iconName]);
+  });
 });
 
-// Set initial state.
 setActive(DEFAULT_ICON);
