@@ -111,6 +111,12 @@ filterwarnings = [
     # for the full process lifetime and tasks are always awaited or cancelled
     # cleanly during shutdown.
     "ignore::pytest.PytestUnraisableExceptionWarning",
+    # The same unawaited-coroutine finalisation can surface as a bare
+    # RuntimeWarning when Python's GC raises it from within SQLAlchemy's
+    # internals (e.g. orm/interfaces.py) rather than through pytest's
+    # unraisable-exception hook.  Message pattern matches only the specific
+    # AsyncSession.close coroutine, not unrelated RuntimeWarnings.
+    "ignore:coroutine 'AsyncSession.close' was never awaited:RuntimeWarning",
 ]
 
 [tool.hatch.build.targets.wheel]

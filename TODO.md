@@ -138,7 +138,7 @@ The static home page at `/`.
 
 ---
 
-## WP-08: Note Publishing + Outbox
+## WP-08: Note Publishing + Outbox ✅
 
 Create notes and generate the corresponding AP activities. Delivery comes in WP-09.
 
@@ -219,19 +219,20 @@ Outgoing follow requests and collection endpoints.
 
 ---
 
-## WP-12: Media Upload + Processing
+## WP-12: Media Upload + Processing ✅
 
 Image handling for note attachments and avatar uploads.
 
-- [ ] Upload endpoint (admin-protected): accept image file via multipart form
-- [ ] Validation: MIME type allowlist (JPEG, PNG, WebP, GIF, HEIC), max file size (§3.3)
-- [ ] Pillow processing: strip metadata (EXIF, IPTC, XMP), optimise (§3.3)
-- [ ] `pillow-heif`: detect HEIC and convert to JPEG
-- [ ] Store optimised file to configured media path
-- [ ] Create MediaAttachment record
-- [ ] Serve uploaded media via static file route or Caddy passthrough
-- [ ] Avatar proxying: fetch remote avatar URLs to local storage at `/media/avatars/` (§9)
-- [ ] Tests for upload validation, metadata stripping, HEIC conversion, avatar proxying
+- [x] Upload endpoint (admin-protected): accept image file via multipart form
+- [x] Validation: MIME type allowlist (JPEG, PNG, WebP, GIF, HEIC), max file size (§3.3)
+- [x] Pillow processing: strip metadata (EXIF, IPTC, XMP), optimise (§3.3)
+- [x] `pillow-heif`: detect HEIC and convert to JPEG
+- [x] Store optimised file to configured media path
+- [x] Create MediaAttachment record
+- [x] Serve uploaded media via static file route or Caddy passthrough
+- [x] Avatar proxying: fetch remote avatar URLs to local storage at `/media/avatars/` (§9)
+- [x] Tests for upload validation, metadata stripping, HEIC conversion, avatar proxying
+
 
 **Produces:** Images can be uploaded, processed, and served. Remote avatars are proxied.
 
