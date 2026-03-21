@@ -3,8 +3,8 @@
 :root {
     --bg: oklch(11.35% 0.079 264.2);
     --text: oklch(100% 0 0);
-    --text-secondary: oklch(100% 0 0 / 66%);
-    --text-muted: oklch(100% 0 0 / 33%);
+    --text-secondary: oklch(100% 0 0 / 40%);
+    --text-muted: oklch(100% 0 0 / 20%);
 }
 
 /*---------- reset ----------*/
@@ -92,7 +92,7 @@ body {
                 height: 100%;
 
                 path {
-                    stroke-width: 12;
+                    stroke-width: 14;
                 }
             }
         }
@@ -109,22 +109,15 @@ body {
     mix-blend-mode: lighten;
 }
 
-/* The group pseudo-element morphs the element's position and size between
-   old and new states, giving the smooth centering slide. */
 ::view-transition-group(handle) {
     animation-duration: 0.125s;
     animation-timing-function: ease-in-out;
 }
 
-/* Allow snapshots to overflow the group box so the wider one isn't
-   clipped as the group morphs to a narrower width. */
 ::view-transition-image-pair(handle) {
     overflow: visible;
 }
 
-/* Override the UA default of width/height: 100% (which stretches snapshots
-   to fill the animating group, causing the scaling). Use natural snapshot
-   dimensions instead, centred within the group at all times. */
 ::view-transition-old(handle) {
     animation: 0.15s ease-in-out both handle-fade-out;
     width: auto;

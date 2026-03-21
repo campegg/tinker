@@ -16,6 +16,8 @@
     --grey: oklch(0.576 0.039 260.3);
     --white: oklch(0.978 0.003 248.2);
     --black: oklch(0.244 0.032 252.9);
+    --true-white: oklch(1 0 0);
+    --true-black: oklch(0 0 0);
 
     /* Semantic colors */
     color-scheme: light dark;
@@ -23,17 +25,14 @@
         color-mix(in oklch, var(--grey), var(--black) 40%),
         color-mix(in oklch, var(--grey), var(--white) 90%)
     );
-    --text-muted: light-dark(
-        color-mix(in oklch, var(--grey), var(--white) 20%),
-        color-mix(in oklch, var(--grey), var(--white) 20%)
-    );
+    --text-muted: color-mix(in oklch, var(--grey), var(--white) 20%);
     --bg: light-dark(var(--white), color-mix(in oklch, var(--grey), var(--black) 65%));
     --borders: light-dark(
         color-mix(in oklch, var(--grey), var(--white) 55%),
         color-mix(in oklch, var(--grey), var(--black) 25%)
     );
     --primary: light-dark(var(--blue), color-mix(in oklch, var(--blue), var(--white) 50%));
-    --secondary: light-dark(var(--orange), var(--orange));
+    --secondary: var(--orange);
 
     /* Base measurements */
     --base-font-size: 16px;
@@ -57,12 +56,12 @@
     --font-weight-xbold: 730;
 
     /* Spacing scale */
-    --margin-xs: calc(var(--margin-sm) * 0.66667); /* 14px */
-    --margin-sm: calc(var(--margin-md) * 0.75); /* 21px */
-    --margin-md: calc(var(--base-margin) * 1); /* 28px */
-    --margin-lg: calc(var(--margin-md) * 1.25); /* 35px */
-    --margin-xl: calc(var(--margin-lg) * 1.5); /* 42px */
-    --margin-xxl: calc(var(--base-margin) * 2); /* 56px */
+    --margin-xs: calc(var(--margin-sm) * 0.66667); /* 12px */
+    --margin-sm: calc(var(--margin-md) * 0.75); /* 18px */
+    --margin-md: var(--base-margin); /* 24px */
+    --margin-lg: calc(var(--margin-md) * 1.25); /* 30px */
+    --margin-xl: calc(var(--margin-md) * 1.5); /* 36px */
+    --margin-xxl: calc(var(--margin-md) * 1.75); /* 42px */
 
     /* Base typography */
     font-family: inter, system-ui, ui-sans-serif, sans-serif;
@@ -70,7 +69,7 @@
     font-weight: var(--font-weight-normal);
     font-feature-settings: "calt", "cv10", "cv11", "liga", "ss01", "ss03";
     font-variation-settings: normal;
-    letter-spacing: -0.015rem;
+    letter-spacing: -0.02em;
     -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%;
 
@@ -159,8 +158,8 @@
 /*---------- reset ----------*/
 
 *,
-:before,
-:after {
+::before,
+::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
@@ -169,7 +168,7 @@
 /*---------- elements ----------*/
 
 body {
-    font-size: 1rem;
+    font-size: var(--font-size-md);
     line-height: var(--base-margin);
     display: flex;
     flex-direction: column;
@@ -193,40 +192,40 @@ body:has(.login-form) {
 }
 
 .login-form {
-    width: 15rem;
+    inline-size: calc(var(--margin-xxl) * 6);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--margin-xs);
 }
 
 .login-field {
     display: block;
-    width: 100%;
-    height: 2.25rem;
-    padding: 0 0.625rem;
-    background: var(--white);
+    inline-size: 100%;
+    block-size: var(--margin-xl);
+    padding-block: 0;
+    padding-inline: var(--margin-xs);
+    background: var(--true-white);
     border: 1px solid var(--borders);
     border-radius: var(--base-border-radius);
     font-family: inherit;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-normal);
     color: var(--text);
-    letter-spacing: -0.02em;
     appearance: none;
-}
 
-.login-field::placeholder {
-    color: var(--text-muted);
+    &::placeholder {
+        color: var(--text-muted);
+    }
 }
 
 .login-btn-row {
-    text-align: right;
+    text-align: end;
 }
 
 .login-btn {
-    width: 4.5rem;
-    height: 1.5rem;
-    background: var(--white);
+    block-size: var(--margin-md);
+    padding-inline: var(--margin-xs);
+    background: var(--true-white);
     border: 1px solid var(--borders);
     border-radius: var(--base-border-radius);
     font-family: inherit;
@@ -234,17 +233,11 @@ body:has(.login-form) {
     font-weight: var(--font-weight-semi);
     color: var(--text);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
     cursor: pointer;
-}
 
-.login-btn:hover {
-    border-color: var(--text-muted);
-}
-
-.login-btn:focus-visible {
-    outline: 2px solid var(--borders);
-    outline-offset: 2px;
+    &:hover {
+        border-color: var(--text-muted);
+    }
 }
 
 .login-error {
