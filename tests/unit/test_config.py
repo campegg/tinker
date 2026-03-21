@@ -25,7 +25,7 @@ class TestLoadConfig:
             "TINKER_USERNAME",
         }
         cleaned = {k: v for k, v in os.environ.items() if k not in env_vars}
-        with patch.dict(os.environ, cleaned, clear=True):
+        with patch("app.core.config.load_dotenv"), patch.dict(os.environ, cleaned, clear=True):
             config = load_config()
 
         assert config["TINKER_DOMAIN"] == "localhost"

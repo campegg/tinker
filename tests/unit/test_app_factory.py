@@ -60,7 +60,7 @@ class TestLoadConfig:
 
     def test_defaults_without_env_vars(self) -> None:
         """Config provides sensible defaults when env vars are missing."""
-        with patch.dict("os.environ", {}, clear=True):
+        with patch("app.core.config.load_dotenv"), patch.dict("os.environ", {}, clear=True):
             from app.core.config import load_config
 
             config = load_config()
