@@ -336,7 +336,7 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 
 Profile editing, social graph management, liked posts, search — all as static HTML shells with Web Components backed by JSON API endpoints.
 
-- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, links (§5.6, §8.2); own published notes listed below the edit form with Edit and Delete controls
+- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, links (§5.6, §8.2); bio is edited as Markdown source and rendered to HTML (with typographic processing) on save — the rendered HTML is used for the public profile page injection and for the `summary` field in the actor document; own published notes listed below the edit form with Edit and Delete controls
 - [ ] Avatar upload: uses media upload pipeline from WP-12, wired into profile Web Component
 - [ ] **Following view:** static HTML shell + `<following-list>` Web Component + JSON API endpoint listing followed actors with Unfollow action
 - [ ] **Followers view:** static HTML shell + `<followers-list>` Web Component + JSON API endpoint listing followers with Remove action (sends `Reject` or `Block`? — decide and document)

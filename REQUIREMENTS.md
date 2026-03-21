@@ -41,7 +41,7 @@ The public profile page at `/{actor}` displays:
 - Links to elsewhere (other web presences, if desired).
 - No feed, no post list, no pagination.
 
-This is a self-contained static HTML file with all CSS and JS inline. Profile content (display name, bio, avatar, handle, links) is injected server-side via simple string interpolation from the settings table — not a template engine. The page does not require JavaScript to display its core content.
+This is a self-contained static HTML file with all CSS and JS inline. Profile content (display name, bio rendered HTML, avatar, handle, links) is injected server-side via simple string interpolation from the settings table — not a template engine. The bio is stored as Markdown source and rendered to HTML (with the same typographic processing as notes — smart quotes, em/en dash, ellipsis) before injection. The page does not require JavaScript to display its core content.
 
 A **"Follow me"** link is displayed on the page. Clicking it opens the visitor's Fediverse client pre-populated to follow this actor, using the actor's full AP URI as the target. This is implemented as a standard `<a>` link — no JavaScript required.
 
@@ -98,7 +98,7 @@ When a note is edited (local or remote), the previous version is overwritten. No
 ### 4.1 Actor & Discovery
 
 - **Single actor** at a fixed `/{username}` endpoint. The username is set via environment variable (see §8.1). This is the same route as the public profile page (§2.3) — content negotiation determines whether to return the HTML profile or the JSON-LD actor document.
-- **Actor document:** JSON-LD ActivityStreams object with `id`, `inbox`, `outbox`, `followers`, `following`, `preferredUsername`, `name`, `summary`, `icon`, `publicKey`. The `name`, `summary`, and `icon` fields are read from the database settings table (see §8.2).
+- **Actor document:** JSON-LD ActivityStreams object with `id`, `inbox`, `outbox`, `followers`, `following`, `preferredUsername`, `name`, `summary`, `icon`, `publicKey`. The `name`, `summary`, and `icon` fields are read from the database settings table (see §8.2). The `summary` field contains rendered HTML (the bio Markdown rendered with typographic processing), not the raw Markdown source.
 - **WebFinger:** `/.well-known/webfinger?resource=acct:{user}@{domain}` returning the actor's `self` link (which points to `/{username}`).
 - **NodeInfo:** `/.well-known/nodeinfo` (version 2.0) advertising software name, version, protocols, user count (1), post count.
 
@@ -335,7 +335,7 @@ User-editable configuration stored in a `settings` table as key-value pairs. Rea
 | Key              | Description                                        | Used by                              |
 |------------------|----------------------------------------------------|--------------------------------------|
 | `display_name`   | Author's display name                              | Public profile page, actor document  |
-| `bio`            | Short biography / summary (Markdown)               | Public profile page, actor document  |
+| `bio`            | Short biography / summary — stored as Markdown source, rendered to HTML (with typographic processing) for display on the public profile page and as the `summary` field in the actor document | Public profile page, actor document  |
 | `avatar`         | Path to uploaded avatar image                      | Public profile page, actor document  |
 | `links`          | JSON array of external URLs                        | Public profile page                  |
 
