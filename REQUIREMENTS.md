@@ -43,6 +43,8 @@ The public profile page at `/{actor}` displays:
 
 This is a self-contained static HTML file with all CSS and JS inline. Profile content (display name, bio, avatar, handle, links) is injected server-side via simple string interpolation from the settings table — not a template engine. The page does not require JavaScript to display its core content.
 
+A **"Follow me"** link is displayed on the page. Clicking it opens the visitor's Fediverse client pre-populated to follow this actor, using the actor's full AP URI as the target. This is implemented as a standard `<a>` link — no JavaScript required.
+
 The `/{actor}` route is dual-purpose — it also serves as the ActivityPub actor endpoint. Content negotiation on the `Accept` header determines the response:
 
 - **`application/activity+json` or `application/ld+json`:** Return the JSON-LD actor document (§4.1).
@@ -222,14 +224,19 @@ Aggregated, persistent view of the same notification types pushed via SSE:
 
 Notifications are stored in the database and served via a paginated JSON API endpoint. A Web Component fetches and renders the notification list. The SSE events (§5.3) provide real-time alerts; this view provides the browsable history.
 
+**Follow notification items** include an inline Follow button (if not already following back) or an Unfollow text link (if already following back), actionable directly from the notification row.
+
+**Reply notification items** display the reply content in a styled container within the notification row, along with like, reply, and boost action icons for the reply post.
+
 ### 5.6 Additional Views
 
 Each additional view is a static HTML shell that loads Web Components to fetch data from admin JSON API endpoints.
 
-- **Profile:** View and edit your own actor profile (name, bio, avatar). Edits update the database settings table (§8.2), which propagates to the public profile page and actor document.
+- **Profile:** View and edit your own actor profile (name, bio, avatar). Edits update the database settings table (§8.2), which propagates to the public profile page and actor document. The profile tab also shows the user's own published notes below the edit form, with Edit and Delete controls on each.
 - **Following / Followers:** Lists with Unfollow / Remove actions.
 - **Likes:** Posts you have liked.
-- **Search:** Remote actor lookup by handle (`@user@domain`) to view their profile and follow.
+- **Search:** Remote actor lookup implemented as a **modal overlay** triggered from a search icon button in the admin navigation — not a separate page. The modal contains an input field for `@user@domain`, fetches the remote actor via WebFinger on submit, and displays a profile card with a Follow button on match or a "no result" message on failure.
+- **Remote actor profile modal:** Clicking any actor name, handle, or avatar anywhere in the admin interface (timeline, notifications, followers, following, likes) opens a modal overlay showing that actor's profile background, avatar, display name, handle, bio, and a Follow/Unfollow button. This is a shared `<actor-profile-modal>` Web Component triggered from within other components.
 
 ### 5.7 Interaction Model
 

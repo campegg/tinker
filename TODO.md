@@ -67,7 +67,7 @@ Wire up both configuration layers so they're usable by everything that follows.
 
 ---
 
-## WP-04: Actor, WebFinger, NodeInfo ✅
+## WP-04: Actor, WebFinger, NodeInfo
 
 The identity layer — everything remote servers need to discover and address this instance. The `/{username}` route is dual-purpose: it serves the public profile page for browsers and the JSON-LD actor document for AP consumers.
 
@@ -78,6 +78,7 @@ The identity layer — everything remote servers need to discover and address th
 - [x] WebFinger endpoint at `GET /.well-known/webfinger` (§4.1): returns `self` link pointing to `/{username}`
 - [x] NodeInfo endpoints at `GET /.well-known/nodeinfo` and the referenced NodeInfo document (§4.1)
 - [x] Integration tests: WebFinger returns correct self link, actor document is valid JSON-LD, NodeInfo reports correct stats, browser request to `/{username}` returns HTML profile with expected content, AP request to `/{username}` returns JSON-LD
+- [ ] "Follow me" link on the public profile page (§2.3): a plain `<a>` whose `href` is the actor's full AP URI, allowing Fediverse clients to resolve it into a follow action
 
 **Produces:** Discoverable ActivityPub actor with a public profile page. Remote servers can find and address this instance. Visitors see the profile in a browser.
 
@@ -316,9 +317,11 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 - [ ] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination
 - [ ] `<notification-list>` Web Component: fetches notifications JSON, renders the list, handles "load more" pagination
 - [ ] `<notification-item>` Web Component: renders a single notification — type, actor, object reference, timestamp, read state
+- [ ] Follow notification items: include Follow button (not following back) or Unfollow text link (already following back) actionable inline (§5.5)
+- [ ] Reply notification items: display reply content in a styled container within the notification row, with like/reply/boost action icons (§5.5)
 - [ ] Mark-as-read behaviour: JSON API endpoint to mark individual or all notifications as read; `<notification-item>` updates state accordingly
 - [ ] Static HTML shell at `static/admin/notifications.html` that loads the Web Components
-- [ ] Tests for notifications JSON API (auth, response format, pagination), mark-as-read
+- [ ] Tests for notifications JSON API (auth, response format, pagination), mark-as-read, follow-back action, inline reply content
 
 **Produces:** Browsable notification history.
 
@@ -330,12 +333,14 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 
 Profile editing, social graph management, liked posts, search — all as static HTML shells with Web Components backed by JSON API endpoints.
 
-- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, links (§5.6, §8.2)
+- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, links (§5.6, §8.2); own published notes listed below the edit form with Edit and Delete controls
 - [ ] Avatar upload: uses media upload pipeline from WP-12, wired into profile Web Component
 - [ ] **Following view:** static HTML shell + `<following-list>` Web Component + JSON API endpoint listing followed actors with Unfollow action
 - [ ] **Followers view:** static HTML shell + `<followers-list>` Web Component + JSON API endpoint listing followers with Remove action (sends `Reject` or `Block`? — decide and document)
 - [ ] **Likes view:** static HTML shell + `<likes-list>` Web Component + JSON API endpoint returning paginated liked posts
-- [ ] **Search view:** static HTML shell + `<actor-search>` Web Component: input field for `@user@domain`, calls JSON API to fetch remote actor via WebFinger, displays profile card, Follow button (§5.6)
+- [ ] **Search modal:** `<actor-search>` Web Component rendered as a modal overlay triggered from the nav search icon button; input field for `@user@domain`, calls JSON API to fetch remote actor via WebFinger, displays profile card + Follow button on match, "no result" message on failure (§5.6)
+- [ ] **Remote actor profile modal:** `<actor-profile-modal>` Web Component — a modal overlay showing a remote actor's profile background, avatar, display name, handle, bio, and Follow/Unfollow button; triggered by clicking any actor name, handle, or avatar in the admin interface (§5.6)
+- [ ] **"Follow me" link on public profile page:** add to `static/pages/profile.html` as part of this pass if not already done in WP-04
 - [ ] Tests for each JSON API endpoint and view
 
 **Produces:** All admin views complete.
