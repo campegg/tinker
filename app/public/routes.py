@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from quart import Blueprint, Response, abort, current_app, g, request
 
 from app.federation.actor import build_actor_document
+from app.federation.outbox import AP_CONTEXT, build_create_activity, build_note_object
 from app.repositories.note import NoteRepository
 from app.services.settings import SettingsService
 
@@ -334,6 +335,136 @@ async def nodeinfo() -> Response:
         response=_json_dumps(body),
         status=200,
         content_type="application/json; charset=utf-8",
+    )
+
+
+_OUTBOX_PAGE_SIZE = 20
+
+
+@public.route("/notes/<note_id>", methods=["GET"])
+async def note_object(note_id: str) -> Response:
+    """Serve the ActivityPub Note object or redirect browsers to home.
+
+    Performs content negotiation on the ``Accept`` header: ActivityPub
+    consumers receive a JSON-LD Note document while browsers are redirected
+    to ``/`` (notes have no human-readable page — see §2.4 of the spec).
+
+    Args:
+        note_id: The UUID string of the note from the URL path.
+
+    Returns:
+        A JSON-LD ``application/activity+json`` response for AP consumers,
+        or a ``302 Found`` redirect to ``/`` for browsers.
+    """
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    username: str = current_app.config["TINKER_USERNAME"]
+    ap_id = f"https://{domain}/notes/{note_id}"
+
+    session: AsyncSession = g.db_session
+    note_repo = NoteRepository(session)
+    note = await note_repo.get_by_ap_id(ap_id)
+
+    if note is None:
+        abort(404)
+
+    if not _wants_json_ld(request.headers.get("Accept")):
+        return Response(
+            response="",
+            status=302,
+            headers={"Location": "/"},
+        )
+
+    actor_uri = f"https://{domain}/{username}"
+    note_doc = build_note_object(note, actor_uri)
+    note_doc["@context"] = AP_CONTEXT
+
+    return Response(
+        response=_json_dumps(note_doc),
+        status=200,
+        content_type=_AP_CONTENT_TYPE,
+    )
+
+
+@public.route("/<username>/outbox", methods=["GET"])
+async def outbox(username: str) -> Response:
+    """Serve the ActivityPub outbox as an OrderedCollection.
+
+    Returns the root collection (total item count and first-page link) when
+    no pagination parameters are present, or an ``OrderedCollectionPage`` of
+    ``Create{Note}`` activities when ``?page=true`` (first page) or
+    ``?max_id=<ap_id>&page=true`` (subsequent pages) is set.
+
+    Args:
+        username: The username path segment from the URL.
+
+    Returns:
+        A JSON-LD ``application/activity+json`` response.
+    """
+    configured_username: str = current_app.config["TINKER_USERNAME"]
+    if username != configured_username:
+        abort(404)
+
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    actor_uri = f"https://{domain}/{username}"
+    outbox_url = f"{actor_uri}/outbox"
+
+    session: AsyncSession = g.db_session
+    note_repo = NoteRepository(session)
+
+    page_param = request.args.get("page")
+    max_id = request.args.get("max_id")
+
+    if page_param is None and max_id is None:
+        # Root collection: total count and first-page pointer only.
+        # Per AP spec, the root does not include the items themselves.
+        total = await note_repo.count()
+        body: dict[str, Any] = {
+            "@context": AP_CONTEXT,
+            "id": outbox_url,
+            "type": "OrderedCollection",
+            "totalItems": total,
+            "first": f"{outbox_url}?page=true",
+        }
+        return Response(
+            response=_json_dumps(body),
+            status=200,
+            content_type=_AP_CONTENT_TYPE,
+        )
+
+    # Paginated page — first page or a cursor-based subsequent page.
+    notes = await note_repo.get_page(
+        limit=_OUTBOX_PAGE_SIZE,
+        before_ap_id=max_id,  # None → first page; ap_id → subsequent page
+    )
+
+    activities: list[dict[str, Any]] = []
+    for note in notes:
+        activity = build_create_activity(note, actor_uri)
+        # Strip the top-level @context from each activity: the page itself
+        # carries the context, so embedding it on every item is redundant.
+        activity.pop("@context", None)
+        activities.append(activity)
+
+    page_id = (
+        f"{outbox_url}?page=true" if max_id is None else f"{outbox_url}?max_id={max_id}&page=true"
+    )
+    page_doc: dict[str, Any] = {
+        "@context": AP_CONTEXT,
+        "id": page_id,
+        "type": "OrderedCollectionPage",
+        "partOf": outbox_url,
+        "orderedItems": activities,
+    }
+
+    # Include a "next" link when there may be more items beyond this page.
+    if len(notes) == _OUTBOX_PAGE_SIZE:
+        oldest = notes[-1]
+        page_doc["next"] = f"{outbox_url}?max_id={oldest.ap_id}&page=true"
+
+    return Response(
+        response=_json_dumps(page_doc),
+        status=200,
+        content_type=_AP_CONTENT_TYPE,
     )
 
 

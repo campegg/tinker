@@ -75,3 +75,41 @@ class NoteRepository(BaseRepository[Note]):
         result = await self._session.execute(select(func.count()).select_from(Note))
         count: int | None = result.scalar()
         return count if count is not None else 0
+
+    async def get_page(
+        self,
+        limit: int = 20,
+        *,
+        before_ap_id: str | None = None,
+    ) -> Sequence[Note]:
+        """Fetch a page of notes for outbox pagination.
+
+        When ``before_ap_id`` is ``None``, returns the most recent ``limit``
+        notes ordered newest-first. When a cursor is supplied, resolves it to
+        a ``published_at`` timestamp and returns notes published strictly
+        before that point.
+
+        Args:
+            limit: Maximum number of notes to return. Defaults to 20.
+            before_ap_id: The ``ap_id`` of the exclusive upper cursor. Only
+                notes published *before* the note with this AP ID are
+                returned. If the AP ID does not resolve to a known note,
+                an empty sequence is returned.
+
+        Returns:
+            A sequence of notes ordered from newest to oldest.
+        """
+        if before_ap_id is None:
+            return await self.get_recent(limit)
+
+        cursor = await self.get_by_ap_id(before_ap_id)
+        if cursor is None:
+            return []
+
+        result = await self._session.execute(
+            select(Note)
+            .where(Note.published_at < cursor.published_at)
+            .order_by(Note.published_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()

@@ -143,14 +143,14 @@ The static home page at `/`.
 Create notes and generate the corresponding AP activities. Delivery comes in WP-09.
 
 - [x] Schema migration: add `bio`, `header_image_url` to `remote_actors`; add `content` to `notifications` (§4.7, §5.5)
-- [ ] Note service: create, edit, delete operations (§3.1, §3.2)
-- [ ] Markdown → HTML rendering
-- [ ] AP object endpoint at `GET /notes/{id}` (§2.4): JSON-LD for AP consumers, `302 → /` for browsers
-- [ ] `Create{Note}` activity generation on publish (§4.3)
-- [ ] `Update{Note}` activity generation on edit
-- [ ] `Delete` activity generation (with Tombstone) on delete
-- [ ] Outbox collection endpoint at `GET /{username}/outbox` (§4.3): paginated OrderedCollection
-- [ ] Tests for note CRUD, AP object serialisation, content negotiation, outbox pagination
+- [x] Note service: create, edit, delete operations (§3.1, §3.2)
+- [x] Markdown → HTML rendering
+- [x] AP object endpoint at `GET /notes/{id}` (§2.4): JSON-LD for AP consumers, `302 → /` for browsers
+- [x] `Create{Note}` activity generation on publish (§4.3)
+- [x] `Update{Note}` activity generation on edit
+- [x] `Delete` activity generation (with Tombstone) on delete
+- [x] Outbox collection endpoint at `GET /{username}/outbox` (§4.3): paginated OrderedCollection
+- [x] Tests for note CRUD, AP object serialisation, content negotiation, outbox pagination
 
 **Produces:** Notes can be created, edited, deleted. AP objects are fetchable. Activities are generated (but not yet delivered).
 
