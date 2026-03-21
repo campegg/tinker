@@ -92,3 +92,32 @@ class TimelineItemRepository(BaseRepository[TimelineItem]):
             select(TimelineItem).where(TimelineItem.original_object_uri == uri)
         )
         return result.scalars().first()
+
+    async def get_by_actor_type_and_object_uri(
+        self,
+        actor_uri: str,
+        activity_type: str,
+        original_object_uri: str,
+    ) -> TimelineItem | None:
+        """Fetch a timeline item matching actor, activity type, and object URI.
+
+        Used for ``Undo{Announce}`` processing: given a received Undo
+        wrapping an Announce, identifies the previously stored timeline
+        entry so it can be removed.
+
+        Args:
+            actor_uri: The AP URI of the actor who performed the activity.
+            activity_type: The activity type to match (e.g. ``"Announce"``).
+            original_object_uri: The AP URI of the boosted/referenced object.
+
+        Returns:
+            The matching timeline item, or ``None`` if not found.
+        """
+        result = await self._session.execute(
+            select(TimelineItem).where(
+                TimelineItem.actor_uri == actor_uri,
+                TimelineItem.activity_type == activity_type,
+                TimelineItem.original_object_uri == original_object_uri,
+            )
+        )
+        return result.scalars().first()

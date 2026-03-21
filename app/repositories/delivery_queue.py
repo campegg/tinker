@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -72,3 +72,30 @@ class DeliveryQueueRepository(BaseRepository[DeliveryQueue]):
             )
         )
         return result.scalars().all()
+
+    async def has_recent_success(self, inbox_url: str, *, since: datetime) -> bool:
+        """Check whether a successful delivery to an inbox exists since a cutoff.
+
+        Used for dead instance detection: if no successful delivery to a
+        given inbox has occurred in the last ``N`` days, the remote server
+        may be permanently unreachable.
+
+        Args:
+            inbox_url: The inbox URL to check.
+            since: Only consider deliveries created after this timestamp.
+
+        Returns:
+            ``True`` if at least one ``"delivered"`` entry for the inbox
+            exists with ``created_at >= since``, ``False`` otherwise.
+        """
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(DeliveryQueue)
+            .where(
+                DeliveryQueue.target_inbox == inbox_url,
+                DeliveryQueue.status == "delivered",
+                DeliveryQueue.created_at >= since,
+            )
+        )
+        count: int | None = result.scalar()
+        return (count or 0) > 0

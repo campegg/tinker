@@ -84,3 +84,30 @@ class FollowerRepository(BaseRepository[Follower]):
         )
         count: int | None = result.scalar()
         return count if count is not None else 0
+
+    async def get_by_inbox_url(self, inbox_url: str) -> Follower | None:
+        """Fetch a follower whose inbox or shared inbox matches the given URL.
+
+        Used for dead instance detection: after all deliveries to an inbox
+        permanently fail, look up the corresponding follower so its status
+        can be updated to ``"unreachable"``.
+
+        Checks ``shared_inbox_url`` first (exact match), then ``inbox_url``.
+
+        Args:
+            inbox_url: The inbox URL to look up.
+
+        Returns:
+            The first matching follower record, or ``None`` if not found.
+        """
+        from sqlalchemy import or_
+
+        result = await self._session.execute(
+            select(Follower).where(
+                or_(
+                    Follower.shared_inbox_url == inbox_url,
+                    Follower.inbox_url == inbox_url,
+                )
+            )
+        )
+        return result.scalars().first()
