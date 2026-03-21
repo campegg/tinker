@@ -90,6 +90,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning",
+    # aiosqlite connections are GC'd during test teardown before the pool
+    # can check them back in — harmless in tests, not reproducible in production.
+    "ignore::sqlalchemy.exc.SAWarning",
 ]
 
 [tool.hatch.build.targets.wheel]

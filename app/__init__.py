@@ -8,7 +8,16 @@ from app.public.routes import public
 
 
 def create_app() -> Quart:
-    """Create and configure the Quart application."""
+    """Create and configure the Quart application.
+
+    Loads configuration from environment variables, initialises the async
+    database engine and session factory, wires up request-scoped session
+    lifecycle hooks, registers all blueprints, and schedules first-run
+    admin password seeding via the ``before_serving`` hook.
+
+    Returns:
+        A configured :class:`~quart.Quart` application instance.
+    """
     app = Quart(__name__, static_folder="../static", static_url_path="/assets")
 
     config = load_config()
@@ -49,17 +58,21 @@ def create_app() -> Quart:
         admin_password: str = app.config.get("TINKER_ADMIN_PASSWORD", "")
         if not admin_password:
             return
-        db_session = session_factory()
-        try:
-            from app.admin.auth import hash_password
-            from app.services.settings import SettingsService
 
-            settings = SettingsService(db_session)
-            existing = await settings.get_admin_password_hash()
-            if existing is None:
-                await settings.set_admin_password_hash(hash_password(admin_password))
-        finally:
-            await db_session.close()
+        from app.admin.auth import hash_password
+        from app.services.settings import SettingsService
+
+        # Use the context-manager form so the session is always closed and
+        # its underlying connection returned to the pool, even on error.
+        async with session_factory() as db_session:
+            try:
+                settings = SettingsService(db_session)
+                existing = await settings.get_admin_password_hash()
+                if existing is None:
+                    await settings.set_admin_password_hash(hash_password(admin_password))
+            except Exception:
+                await db_session.rollback()
+                raise
 
     @app.after_serving
     async def _shutdown() -> None:

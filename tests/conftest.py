@@ -25,8 +25,21 @@ def _test_env(tmp_path: Any) -> None:
 
 @pytest.fixture
 async def app() -> AsyncGenerator[Quart, None]:
-    """Create a test application instance."""
+    """Create a test application instance with an initialised database schema."""
     application = create_app()
+
+    # Create all tables in the temp database before the app starts serving.
+    # Without this, any test that writes to the DB via the app would fail with
+    # "no such table" errors.
+    from sqlalchemy import create_engine
+
+    from app.core.database import create_sync_url
+    from app.models.base import Base
+
+    sync_engine = create_engine(create_sync_url(application.config["TINKER_DB_PATH"]))
+    Base.metadata.create_all(sync_engine)
+    sync_engine.dispose()
+
     async with application.test_app():
         yield application
 
