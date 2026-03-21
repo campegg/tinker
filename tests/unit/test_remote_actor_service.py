@@ -27,6 +27,7 @@ SAMPLE_ACTOR_DOC: dict[str, object] = {
     "following": "https://mastodon.social/users/alice/following",
     "endpoints": {"sharedInbox": "https://mastodon.social/inbox"},
     "icon": {"type": "Image", "url": "https://mastodon.social/avatar.jpg"},
+    "image": {"type": "Image", "url": "https://mastodon.social/headers/alice.jpg"},
     "publicKey": {
         "id": "https://mastodon.social/users/alice#main-key",
         "owner": "https://mastodon.social/users/alice",
@@ -54,6 +55,9 @@ def _make_actor(
     actor.uri = uri
     actor.display_name = "Alice"
     actor.handle = "alice@remote.example.com"
+    actor.bio = None
+    actor.avatar_url = None
+    actor.header_image_url = None
     actor.inbox_url = "https://remote.example.com/users/alice/inbox"
     actor.shared_inbox_url = "https://remote.example.com/inbox"
     actor.public_key = public_key
@@ -263,9 +267,11 @@ class TestFetchAndCache:
         # Verify fields were updated on the existing actor.
         assert existing.display_name == "Alice Smith"
         assert existing.handle == "alice@mastodon.social"
+        assert existing.bio == "A test user"
+        assert existing.avatar_url == "https://mastodon.social/avatar.jpg"
+        assert existing.header_image_url == "https://mastodon.social/headers/alice.jpg"
         assert existing.inbox_url == "https://mastodon.social/users/alice/inbox"
         assert existing.shared_inbox_url == "https://mastodon.social/inbox"
-        assert existing.avatar_url == "https://mastodon.social/avatar.jpg"
         assert existing.public_key == (
             "-----BEGIN PUBLIC KEY-----\nFAKE\n-----END PUBLIC KEY-----"
         )
@@ -380,9 +386,11 @@ class TestParseActorDocument:
         assert result["uri"] == "https://mastodon.social/users/alice"
         assert result["display_name"] == "Alice Smith"
         assert result["handle"] == "alice@mastodon.social"
+        assert result["bio"] == "A test user"
+        assert result["avatar_url"] == "https://mastodon.social/avatar.jpg"
+        assert result["header_image_url"] == "https://mastodon.social/headers/alice.jpg"
         assert result["inbox_url"] == "https://mastodon.social/users/alice/inbox"
         assert result["shared_inbox_url"] == "https://mastodon.social/inbox"
-        assert result["avatar_url"] == "https://mastodon.social/avatar.jpg"
         assert result["public_key"] == (
             "-----BEGIN PUBLIC KEY-----\nFAKE\n-----END PUBLIC KEY-----"
         )
@@ -406,7 +414,9 @@ class TestParseActorDocument:
         )
         assert result["display_name"] is None
         assert result["handle"] is None
+        assert result["bio"] is None
         assert result["avatar_url"] is None
+        assert result["header_image_url"] is None
         assert result["shared_inbox_url"] is None
 
     def test_raises_on_missing_id(self) -> None:
@@ -549,3 +559,73 @@ class TestParseActorDocument:
         }
         result = RemoteActorService._parse_actor_document(doc)
         assert result["shared_inbox_url"] is None
+
+    def test_extracts_bio_from_summary(self) -> None:
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/alice",
+            "inbox": "https://example.com/users/alice/inbox",
+            "summary": "<p>My bio here</p>",
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        assert result["bio"] == "<p>My bio here</p>"
+
+    def test_bio_is_none_when_summary_missing(self) -> None:
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/alice",
+            "inbox": "https://example.com/users/alice/inbox",
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        assert result["bio"] is None
+
+    def test_bio_is_none_when_summary_is_empty_string(self) -> None:
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/alice",
+            "inbox": "https://example.com/users/alice/inbox",
+            "summary": "",
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        assert result["bio"] is None
+
+    def test_extracts_header_image_from_image_field(self) -> None:
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/alice",
+            "inbox": "https://example.com/users/alice/inbox",
+            "image": {"type": "Image", "url": "https://example.com/headers/alice.jpg"},
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        assert result["header_image_url"] == "https://example.com/headers/alice.jpg"
+
+    def test_header_image_is_none_when_image_missing(self) -> None:
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/alice",
+            "inbox": "https://example.com/users/alice/inbox",
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        assert result["header_image_url"] is None
+
+    def test_header_image_is_none_when_image_has_no_url(self) -> None:
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/alice",
+            "inbox": "https://example.com/users/alice/inbox",
+            "image": {"type": "Image"},
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        assert result["header_image_url"] is None

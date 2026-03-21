@@ -22,6 +22,7 @@ class Notification(UUIDModel):
         actor_uri: The AP URI of the actor who triggered the notification.
         actor_name: Display name of the triggering actor, if known.
         object_uri: The AP URI of the object involved, if applicable.
+        content: Sanitised HTML content of the object, for reply notifications.
         read: Whether the notification has been read by the admin.
     """
 
@@ -41,6 +42,11 @@ class Notification(UUIDModel):
         default=None,
     )
     object_uri: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+    )
+    content: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         default=None,

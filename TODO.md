@@ -142,6 +142,7 @@ The static home page at `/`.
 
 Create notes and generate the corresponding AP activities. Delivery comes in WP-09.
 
+- [x] Schema migration: add `bio`, `header_image_url` to `remote_actors`; add `content` to `notifications` (§4.7, §5.5)
 - [ ] Note service: create, edit, delete operations (§3.1, §3.2)
 - [ ] Markdown → HTML rendering
 - [ ] AP object endpoint at `GET /notes/{id}` (§2.4): JSON-LD for AP consumers, `302 → /` for browsers
@@ -243,7 +244,7 @@ Image handling for note attachments and avatar uploads.
 The primary admin view — static HTML shell with Web Components fetching from a JSON API.
 
 - [ ] **Base admin JSON API patterns:** define auth-protected JSON endpoints with consistent response envelope (e.g., `{ "data": [...], "cursor": ... }`)
-- [ ] **Base Web Component patterns:** establish a base component class or shared utilities (authenticated `fetch` wrapper, relative-time formatting, error handling)
+- [ ] **Base Web Component patterns:** establish a base component class or shared utilities (authenticated `fetch` wrapper, relative-time formatting, error handling); establish the shared modal event pattern — child components dispatch `show-actor-profile` DOM event with actor URI payload, single `<actor-profile-modal>` instance on each admin shell listens on `document` (§5.6)
 - [ ] Timeline JSON API endpoint (admin-protected): return timeline data as JSON — includes `TimelineItem` records and own notes, with like/boost state per item
 - [ ] `<timeline-view>` Web Component: fetches timeline JSON and renders the list of items
 - [ ] `<timeline-item>` Web Component: renders a single post — author avatar, display name, handle, relative timestamp, rendered content, media, boost attribution (§5.2)
@@ -314,7 +315,7 @@ Real-time notification push to the admin.
 
 Persistent, browsable notification history — static HTML shell with Web Components fetching from a JSON API.
 
-- [ ] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination
+- [ ] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination; join against `following` table to include `is_following` boolean per actor on each notification item
 - [ ] `<notification-list>` Web Component: fetches notifications JSON, renders the list, handles "load more" pagination
 - [ ] `<notification-item>` Web Component: renders a single notification — type, actor, object reference, timestamp, read state
 - [ ] Follow notification items: include Follow button (not following back) or Unfollow text link (already following back) actionable inline (§5.5)

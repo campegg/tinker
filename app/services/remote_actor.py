@@ -164,7 +164,9 @@ class RemoteActorService:
             if existing is not None:
                 existing.display_name = parsed["display_name"]
                 existing.handle = parsed["handle"]
+                existing.bio = parsed["bio"]
                 existing.avatar_url = parsed["avatar_url"]
+                existing.header_image_url = parsed["header_image_url"]
                 existing.inbox_url = parsed["inbox_url"]
                 existing.shared_inbox_url = parsed["shared_inbox_url"]
                 existing.public_key = parsed["public_key"]
@@ -176,7 +178,9 @@ class RemoteActorService:
                 uri=parsed["uri"],
                 display_name=parsed["display_name"],
                 handle=parsed["handle"],
+                bio=parsed["bio"],
                 avatar_url=parsed["avatar_url"],
+                header_image_url=parsed["header_image_url"],
                 inbox_url=parsed["inbox_url"],
                 shared_inbox_url=parsed["shared_inbox_url"],
                 public_key=parsed["public_key"],
@@ -254,8 +258,8 @@ class RemoteActorService:
 
         Returns:
             A dictionary with the keys ``uri``, ``display_name``,
-            ``handle``, ``avatar_url``, ``inbox_url``,
-            ``shared_inbox_url``, and ``public_key``.
+            ``handle``, ``bio``, ``avatar_url``, ``header_image_url``,
+            ``inbox_url``, ``shared_inbox_url``, and ``public_key``.
 
         Raises:
             _MissingFieldError: If a required field (``id``, ``inbox``,
@@ -290,12 +294,24 @@ class RemoteActorService:
         if isinstance(raw_name, str) and raw_name:
             display_name = raw_name
 
+        bio: str | None = None
+        raw_summary = doc.get("summary")
+        if isinstance(raw_summary, str) and raw_summary:
+            bio = raw_summary
+
         avatar_url: str | None = None
         icon = doc.get("icon")
         if isinstance(icon, dict):
             icon_url = icon.get("url")
             if isinstance(icon_url, str) and icon_url:
                 avatar_url = icon_url
+
+        header_image_url: str | None = None
+        image = doc.get("image")
+        if isinstance(image, dict):
+            image_url = image.get("url")
+            if isinstance(image_url, str) and image_url:
+                header_image_url = image_url
 
         shared_inbox_url: str | None = None
         endpoints = doc.get("endpoints")
@@ -308,7 +324,9 @@ class RemoteActorService:
             "uri": actor_id,
             "display_name": display_name,
             "handle": handle,
+            "bio": bio,
             "avatar_url": avatar_url,
+            "header_image_url": header_image_url,
             "inbox_url": inbox,
             "shared_inbox_url": shared_inbox_url,
             "public_key": public_key_pem,

@@ -162,7 +162,7 @@ When a note is edited (local or remote), the previous version is overwritten. No
 
 ### 4.7 Object Storage & Caching
 
-- **Remote actor cache:** Store fetched actor documents with a TTL (e.g., 24 hours). Re-fetch on cache miss or expiry. Additionally re-fetch on HTTP Signature verification failure (see §4.2).
+- **Remote actor cache:** Store fetched actor documents with a TTL (e.g., 24 hours). Re-fetch on cache miss or expiry. Additionally re-fetch on HTTP Signature verification failure (see §4.2). Cached fields: `uri`, `display_name`, `handle`, `bio` (from AP `summary`), `avatar_url` (from AP `icon.url`), `header_image_url` (from AP `image.url`), `inbox_url`, `shared_inbox_url`, `public_key`, `fetched_at`.
 - **Remote object cache:** Store received notes for timeline display. Retain for a configurable period (e.g., 90 days), then prune.
 - **Delivery tracking:** For each outbound activity, track delivery status per recipient (pending, delivered, failed, retries).
 
@@ -223,6 +223,8 @@ Aggregated, persistent view of the same notification types pushed via SSE:
 - Replies to your posts.
 
 Notifications are stored in the database and served via a paginated JSON API endpoint. A Web Component fetches and renders the notification list. The SSE events (§5.3) provide real-time alerts; this view provides the browsable history.
+
+**Notification model fields:** `type` (follow/like/boost/reply), `actor_uri`, `actor_name`, `object_uri`, `content` (sanitised HTML reply text, for reply notifications), `read`.
 
 **Follow notification items** include an inline Follow button (if not already following back) or an Unfollow text link (if already following back), actionable directly from the notification row.
 

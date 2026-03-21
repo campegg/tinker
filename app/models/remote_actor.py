@@ -29,7 +29,9 @@ class RemoteActor(UUIDModel):
         uri: The canonical ActivityPub URI of the actor (unique).
         display_name: The actor's display name, if available.
         handle: The actor's handle in user@domain format, if known.
+        bio: The actor's biography or summary, if available (may contain HTML).
         avatar_url: URL to the actor's avatar image (remote URL, not yet proxied).
+        header_image_url: URL to the actor's profile header/background image, if available.
         inbox_url: The actor's inbox endpoint for direct delivery.
         shared_inbox_url: The actor's shared inbox endpoint, if available.
         public_key: PEM-encoded public key for HTTP Signature verification.
@@ -53,7 +55,17 @@ class RemoteActor(UUIDModel):
         nullable=True,
         default=None,
     )
+    bio: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+    )
     avatar_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+    )
+    header_image_url: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         default=None,
