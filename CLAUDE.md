@@ -344,6 +344,12 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 - Pages must not require JavaScript to display their core content; JS is a progressive enhancement only.
 - The shared stylesheet (`static/css/styles.css`, served at `/assets/css/styles.css`) owns the OKLCH color palette, semantic `light-dark()` tokens, `color-mix()` shade derivation, Inter `@font-face` declarations, the box-model reset, and page-specific component styles (e.g. `.login-form`). Prefer adding new component styles here rather than in `<style>` blocks.
 
+### CSS
+
+- Use **native CSS nesting** throughout — selectors, pseudo-classes, pseudo-elements, and media queries should be nested inside their parent rule rather than written as separate flat rules.
+- Use **logical properties** (`inline-size`, `block-size`, `padding-inline`, `margin-block-end`, `text-align: start/end`, etc.) in preference to physical equivalents (`width`, `height`, `padding-left`, `margin-bottom`, `text-align: left/right`, etc.).
+- Use `::before` / `::after` (double colon) for pseudo-elements.
+
 ### Admin UI
 
 - Static HTML shells served from `static/admin/`. Each view is a minimal HTML page that loads Web Components.
