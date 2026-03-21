@@ -23,14 +23,17 @@
         color-mix(in oklch, var(--grey), var(--black) 40%),
         color-mix(in oklch, var(--grey), var(--white) 90%)
     );
-    --text-muted: color-mix(in oklch, var(--grey), var(--white) 20%);
+    --text-muted: light-dark(
+        color-mix(in oklch, var(--grey), var(--white) 20%),
+        color-mix(in oklch, var(--grey), var(--white) 20%)
+    );
     --bg: light-dark(var(--white), color-mix(in oklch, var(--grey), var(--black) 65%));
     --borders: light-dark(
         color-mix(in oklch, var(--grey), var(--white) 55%),
         color-mix(in oklch, var(--grey), var(--black) 25%)
     );
     --primary: light-dark(var(--blue), color-mix(in oklch, var(--blue), var(--white) 50%));
-    --secondary: var(--orange);
+    --secondary: light-dark(var(--orange), var(--orange));
 
     /* Base measurements */
     --base-font-size: 16px;
@@ -176,9 +179,11 @@ body {
     color: var(--text);
 }
 
-/*---------- ids ----------*/
-
-/*---------- classes ----------*/
+input {
+    &:focus {
+        outline: 0;
+    }
+}
 
 /*---------- login ----------*/
 
@@ -212,11 +217,6 @@ body:has(.login-form) {
 
 .login-field::placeholder {
     color: var(--text-muted);
-}
-
-.login-field:focus {
-    outline: 2px solid var(--borders);
-    outline-offset: 0;
 }
 
 .login-btn-row {

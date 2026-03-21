@@ -28,6 +28,28 @@ _JRD_CONTENT_TYPE = "application/jrd+json; charset=utf-8"
 # Cache the profile template in memory after first read.
 _profile_template_cache: str | None = None
 
+# Cache the home template in memory after first read.
+_home_template_cache: str | None = None
+
+
+def _load_home_template() -> str:
+    """Load the home page HTML template from disk, caching after first read.
+
+    Returns:
+        The raw HTML string for the home page.
+
+    Raises:
+        FileNotFoundError: If the template file does not exist at the
+            expected path.
+    """
+    global _home_template_cache
+    if _home_template_cache is not None:
+        return _home_template_cache
+
+    template_path = Path(current_app.static_folder or "static") / "pages" / "home.html"
+    _home_template_cache = template_path.read_text(encoding="utf-8")
+    return _home_template_cache
+
 
 def _load_profile_template() -> str:
     """Load the profile HTML template from disk, caching after first read.
@@ -126,6 +148,20 @@ def _render_profile_html(
     html = html.replace("{{links}}", links_html)
     html = html.replace("{{domain}}", domain)
     return html
+
+
+@public.route("/", methods=["GET"])
+async def home() -> Response:
+    """Serve the home page.
+
+    Returns:
+        The static home HTML page.
+    """
+    return Response(
+        response=_load_home_template(),
+        status=200,
+        content_type="text/html; charset=utf-8",
+    )
 
 
 @public.route("/<username>", methods=["GET"])

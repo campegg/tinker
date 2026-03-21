@@ -1,0 +1,134 @@
+/*---------- custom properties ----------*/
+
+:root {
+    --bg: oklch(11.35% 0.079 264.2);
+    --text: oklch(100% 0 0);
+    --text-secondary: oklch(100% 0 0 / 66%);
+    --text-muted: oklch(100% 0 0 / 33%);
+}
+
+/*---------- reset ----------*/
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/*---------- layout ----------*/
+
+body {
+    background-color: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: ui-serif, serif;
+    letter-spacing: -0.02em;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+}
+
+/*---------- home block ----------*/
+
+.home {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/*---------- heading ----------*/
+
+.home-heading {
+    font-size: 4rem;
+    font-weight: normal;
+    line-height: normal;
+    color: var(--text);
+    margin-bottom: 2.375rem;
+}
+
+/*---------- handle ----------*/
+
+.home-handle {
+    font-size: 1.5rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin-bottom: 1.1875rem;
+}
+
+/*---------- handle dissolve animation ----------*/
+
+@keyframes handle-fade-out {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes handle-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.home-handle.is-fading-out {
+    animation: handle-fade-out 0.16667s ease-in-out forwards;
+}
+
+.home-handle.is-fading-in {
+    animation: handle-fade-in 0.16667s ease-in-out forwards;
+}
+
+/*---------- icons ----------*/
+
+.home-icons {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s ease-in-out;
+    flex-shrink: 0;
+}
+
+.icon-btn:hover {
+    color: var(--text-secondary);
+}
+
+.icon-btn.is-active {
+    color: var(--text-secondary);
+}
+
+.icon-btn svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/*---------- focus ----------*/
+
+.icon-btn:focus-visible {
+    outline: 2px solid var(--text-secondary);
+    outline-offset: 4px;
+    border-radius: 2px;
+}

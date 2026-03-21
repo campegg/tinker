@@ -15,12 +15,13 @@ from app import create_app
 
 @pytest.fixture(autouse=True)
 def _reset_template_cache() -> None:
-    """Reset the profile template cache between tests."""
+    """Reset the template caches between tests."""
     import sys
 
     routes_module = sys.modules.get("app.public.routes")
     if routes_module is not None:
         routes_module._profile_template_cache = None  # type: ignore[attr-defined]
+        routes_module._home_template_cache = None  # type: ignore[attr-defined]
 
 
 @pytest.fixture
@@ -72,6 +73,43 @@ xwIDAQAB
 def _mock_keypair_get_public_key() -> AsyncMock:
     mock = AsyncMock(return_value=_FAKE_PUBLIC_KEY)
     return mock
+
+
+# ---------------------------------------------------------------------------
+# Home page
+# ---------------------------------------------------------------------------
+
+
+class TestHomePage:
+    """Tests for GET /."""
+
+    async def test_returns_200(self, client: Any) -> None:
+        """GET / returns 200 OK."""
+        async with client as c:
+            resp = await c.get("/")
+        assert resp.status_code == 200
+
+    async def test_returns_html(self, client: Any) -> None:
+        """GET / returns an HTML response."""
+        async with client as c:
+            resp = await c.get("/")
+        assert "text/html" in resp.content_type
+
+    async def test_contains_heading(self, client: Any) -> None:
+        """GET / response contains the main heading."""
+        async with client as c:
+            resp = await c.get("/")
+        body = await resp.get_data(as_text=True)
+        assert "home-heading" in body
+
+    async def test_contains_icons(self, client: Any) -> None:
+        """GET / response contains the icon buttons."""
+        async with client as c:
+            resp = await c.get("/")
+        body = await resp.get_data(as_text=True)
+        assert 'data-icon="mail"' in body
+        assert 'data-icon="mastodon"' in body
+        assert 'data-icon="bluesky"' in body
 
 
 # ---------------------------------------------------------------------------

@@ -123,13 +123,13 @@ Admin auth — required before any admin routes.
 
 ---
 
-## WP-07: Home Page
+## WP-07: Home Page ✅
 
 The static home page at `/`.
 
-- [ ] Self-contained static HTML file at `static/pages/home.html` with all CSS and JS inline (§2.2)
-- [ ] Route at `GET /` serving the file — no dynamic data, no API calls, no authentication
-- [ ] Test: home page returns 200 with expected HTML content
+- [x] Self-contained static HTML file at `static/pages/home.html` with all CSS and JS inline (§2.2)
+- [x] Route at `GET /` serving the file — no dynamic data, no API calls, no authentication
+- [x] Test: home page returns 200 with expected HTML content
 
 **Produces:** Public home page at `/`.
 
