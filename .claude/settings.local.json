@@ -8,7 +8,10 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "mcp__claude_ai_Figma__get_metadata",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(python3 -m pytest --collect-only -q)",
+      "Bash(grep:*)",
+      "Bash(wc -l /Users/cam/Projects/tinker/app/**/*.py)"
     ]
   }
 }

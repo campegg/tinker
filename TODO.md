@@ -158,19 +158,19 @@ Create notes and generate the corresponding AP activities. Delivery comes in WP-
 
 ---
 
-## WP-09: Delivery Pipeline
+## WP-09: Delivery Pipeline ✅
 
 Fan-out activities to follower inboxes.
 
-- [ ] Delivery service (`app/federation/delivery.py`): persist to `DeliveryQueue`, fan-out with shared inbox dedup (§6.3)
-- [ ] Semaphore-bounded async delivery tasks (§6.1)
-- [ ] HTTP Signature signing on each delivery request
-- [ ] Status tracking: pending → delivered / failed
-- [ ] Exponential backoff on failure (1m → 5m → 30m → 2h → 12h), max 5 retries (§6.3)
-- [ ] Dead instance detection: flag after 7 days of consecutive failures (§6.3)
-- [ ] Crash recovery on startup: re-enqueue incomplete deliveries (§6.2)
-- [ ] Wire note publishing (WP-08) to trigger delivery
-- [ ] Integration test with mock AP server: publish note → verify `Create{Note}` arrives with valid signature
+- [x] Delivery service (`app/federation/delivery.py`): persist to `DeliveryQueue`, fan-out with shared inbox dedup (§6.3)
+- [x] Semaphore-bounded async delivery tasks (§6.1)
+- [x] HTTP Signature signing on each delivery request
+- [x] Status tracking: pending → delivered / failed
+- [x] Exponential backoff on failure (1m → 5m → 30m → 2h → 12h), max 5 retries (§6.3)
+- [x] Dead instance detection: flag after 7 days of consecutive failures (§6.3)
+- [x] Crash recovery on startup: re-enqueue incomplete deliveries (§6.2)
+- [x] Wire note publishing (WP-08) to trigger delivery
+- [x] Integration test with mock AP server: publish note → verify `Create{Note}` arrives with valid signature
 
 **Produces:** Published notes are delivered to all followers. Failed deliveries retry with backoff.
 
@@ -178,12 +178,12 @@ Fan-out activities to follower inboxes.
 
 ---
 
-## WP-10: Inbox Processing
+## WP-10: Inbox Processing ✅
 
 Receive and process incoming activities from remote servers.
 
-- [ ] Inbox endpoint at `POST /{username}/inbox` (§4.4): verify signature, return `202 Accepted`, dispatch async processing
-- [ ] Activity handlers for all supported types (§4.4 table):
+- [x] Inbox endpoint at `POST /{username}/inbox` (§4.4): verify signature, return `202 Accepted`, dispatch async processing
+- [x] Activity handlers for all supported types (§4.4 table):
   - `Follow` → auto-accept, send `Accept{Follow}`, store follower
   - `Undo{Follow}` → remove follower
   - `Create{Note}` → store in timeline (if from followed actor)
@@ -194,8 +194,8 @@ Receive and process incoming activities from remote servers.
   - `Undo{Like}` / `Undo{Announce}` → remove record
   - `Accept{Follow}` → mark follow as accepted
   - `Reject{Follow}` → mark follow as rejected, remove
-- [ ] Notification creation for relevant activity types (likes, boosts, follows, replies)
-- [ ] Integration tests with mock AP server: mock sends Follow → verify Accept returned; mock sends Create{Note} → verify timeline insertion; mock sends Like → verify notification
+- [x] Notification creation for relevant activity types (likes, boosts, follows, replies)
+- [x] Integration tests with mock AP server: mock sends Follow → verify Accept returned; mock sends Create{Note} → verify timeline insertion; mock sends Like → verify notification
 
 **Produces:** Fully functional inbox. The instance can receive and process all specified activity types.
 

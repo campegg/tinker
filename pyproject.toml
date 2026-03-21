@@ -93,6 +93,15 @@ filterwarnings = [
     # aiosqlite connections are GC'd during test teardown before the pool
     # can check them back in — harmless in tests, not reproducible in production.
     "ignore::sqlalchemy.exc.SAWarning",
+    # aiosqlite runs SQLite operations in a background thread and signals
+    # completion back to the asyncio event loop via call_soon_threadsafe.
+    # When a per-test event loop closes before the thread finishes signalling
+    # (e.g. after a background inbox task completes), the thread raises a
+    # RuntimeError("Event loop is closed") that pytest captures as an
+    # unhandled thread exception warning.  This is a test-environment
+    # artefact — it cannot happen in production where a single long-lived
+    # event loop runs for the lifetime of the process.
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning",
 ]
 
 [tool.hatch.build.targets.wheel]
