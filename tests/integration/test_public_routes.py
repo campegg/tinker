@@ -440,6 +440,16 @@ class TestProfileHTMLPage:
         assert "https://github.com/alice" in body
         assert "https://alice.blog" in body
 
+    async def test_html_contains_follow_me_link(self, client: Any) -> None:
+        response = await client.get(
+            "/testuser",
+            headers={"Accept": "text/html"},
+        )
+        body = await response.get_data(as_text=True)
+        # The follow link must be present and point to the actor's AP URI.
+        assert 'href="https://test.example.com/testuser"' in body
+        assert "Follow me" in body
+
     async def test_returns_404_for_wrong_username_html(self, client: Any) -> None:
         response = await client.get(
             "/wronguser",

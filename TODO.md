@@ -67,7 +67,7 @@ Wire up both configuration layers so they're usable by everything that follows.
 
 ---
 
-## WP-04: Actor, WebFinger, NodeInfo
+## WP-04: Actor, WebFinger, NodeInfo ✅
 
 The identity layer — everything remote servers need to discover and address this instance. The `/{username}` route is dual-purpose: it serves the public profile page for browsers and the JSON-LD actor document for AP consumers.
 
@@ -78,7 +78,7 @@ The identity layer — everything remote servers need to discover and address th
 - [x] WebFinger endpoint at `GET /.well-known/webfinger` (§4.1): returns `self` link pointing to `/{username}`
 - [x] NodeInfo endpoints at `GET /.well-known/nodeinfo` and the referenced NodeInfo document (§4.1)
 - [x] Integration tests: WebFinger returns correct self link, actor document is valid JSON-LD, NodeInfo reports correct stats, browser request to `/{username}` returns HTML profile with expected content, AP request to `/{username}` returns JSON-LD
-- [ ] "Follow me" link on the public profile page (§2.3): a plain `<a>` whose `href` is the actor's full AP URI, allowing Fediverse clients to resolve it into a follow action
+- [x] "Follow me" link on the public profile page (§2.3): a plain `<a>` whose `href` is the actor's full AP URI, allowing Fediverse clients to resolve it into a follow action
 
 **Produces:** Discoverable ActivityPub actor with a public profile page. Remote servers can find and address this instance. Visitors see the profile in a browser.
 

@@ -131,6 +131,7 @@ def _render_profile_html(
     handle: str,
     links_html: str,
     domain: str,
+    actor_uri: str,
 ) -> str:
     """Inject profile data into the HTML template via string interpolation.
 
@@ -146,6 +147,8 @@ def _render_profile_html(
         handle: The full fediverse handle (e.g. ``@user@domain``).
         links_html: Pre-rendered HTML ``<li>`` elements for profile links.
         domain: The instance domain name.
+        actor_uri: The canonical ActivityPub actor URI, used as the href
+            for the "Follow me" link.
 
     Returns:
         The fully rendered HTML string ready to serve to the client.
@@ -157,6 +160,7 @@ def _render_profile_html(
     html = html.replace("{{handle}}", handle)
     html = html.replace("{{links}}", links_html)
     html = html.replace("{{domain}}", domain)
+    html = html.replace("{{actor_uri}}", actor_uri)
     return html
 
 
@@ -224,6 +228,7 @@ async def actor_profile(username: str) -> Response:
         handle=f"@{username}@{domain}",
         links_html=_render_links_html(links),
         domain=domain,
+        actor_uri=f"https://{domain}/{username}",
     )
     return Response(response=html, status=200, content_type="text/html; charset=utf-8")
 

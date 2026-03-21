@@ -1,366 +1,400 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{display_name}} — {{domain}}</title>
-  <meta name="description" content="{{display_name}} on {{domain}}">
-  <style>
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{{display_name}} — {{domain}}</title>
+        <meta name="description" content="{{display_name}} on {{domain}}" />
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
 
-    html {
-      font-size: 16px;
-      -webkit-text-size-adjust: 100%;
-    }
+            html {
+                font-size: 16px;
+                -webkit-text-size-adjust: 100%;
+            }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue",
-        Arial, sans-serif;
-      line-height: 1.6;
-      color: #1a1a1a;
-      background-color: #f8f8f8;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans",
+                    "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+                line-height: 1.6;
+                color: #1a1a1a;
+                background-color: #f8f8f8;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
 
-    a {
-      color: #1a6dd4;
-      text-decoration: none;
-    }
+            a {
+                color: #1a6dd4;
+                text-decoration: none;
+            }
 
-    a:hover,
-    a:focus {
-      text-decoration: underline;
-    }
+            a:hover,
+            a:focus {
+                text-decoration: underline;
+            }
 
-    a:focus-visible {
-      outline: 2px solid #1a6dd4;
-      outline-offset: 2px;
-      border-radius: 2px;
-    }
+            a:focus-visible {
+                outline: 2px solid #1a6dd4;
+                outline-offset: 2px;
+                border-radius: 2px;
+            }
 
-    main {
-      width: 100%;
-      max-width: 600px;
-      padding: 3rem 1.5rem 2rem;
-      flex: 1;
-    }
+            main {
+                width: 100%;
+                max-width: 600px;
+                padding: 3rem 1.5rem 2rem;
+                flex: 1;
+            }
 
-    .profile-card {
-      background: #ffffff;
-      border: 1px solid #e0e0e0;
-      border-radius: 12px;
-      padding: 2.5rem 2rem;
-      text-align: center;
-    }
+            .profile-card {
+                background: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 12px;
+                padding: 2.5rem 2rem;
+                text-align: center;
+            }
 
-    .avatar-container {
-      margin-bottom: 1.5rem;
-    }
+            .avatar-container {
+                margin-bottom: 1.5rem;
+            }
 
-    .avatar {
-      width: 112px;
-      height: 112px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 3px solid #e8e8e8;
-      background-color: #e8e8e8;
-    }
+            .avatar {
+                width: 112px;
+                height: 112px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 3px solid #e8e8e8;
+                background-color: #e8e8e8;
+            }
 
-    .avatar-placeholder {
-      width: 112px;
-      height: 112px;
-      border-radius: 50%;
-      background-color: #d0d0d0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border: 3px solid #e8e8e8;
-    }
+            .avatar-placeholder {
+                width: 112px;
+                height: 112px;
+                border-radius: 50%;
+                background-color: #d0d0d0;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border: 3px solid #e8e8e8;
+            }
 
-    .avatar-placeholder svg {
-      width: 48px;
-      height: 48px;
-      fill: #9a9a9a;
-    }
+            .avatar-placeholder svg {
+                width: 48px;
+                height: 48px;
+                fill: #9a9a9a;
+            }
 
-    .display-name {
-      font-size: 1.75rem;
-      font-weight: 700;
-      line-height: 1.3;
-      color: #111111;
-      margin-bottom: 0.35rem;
-    }
+            .display-name {
+                font-size: 1.75rem;
+                font-weight: 700;
+                line-height: 1.3;
+                color: #111111;
+                margin-bottom: 0.35rem;
+            }
 
-    .handle-row {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      margin-bottom: 1.25rem;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
+            .handle-row {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                margin-bottom: 1.25rem;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
 
-    .handle {
-      font-size: 0.95rem;
-      color: #606060;
-      word-break: break-all;
-    }
+            .handle {
+                font-size: 0.95rem;
+                color: #606060;
+                word-break: break-all;
+            }
 
-    .copy-btn {
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: none;
-      border: 1px solid #d0d0d0;
-      border-radius: 6px;
-      padding: 0.2rem 0.45rem;
-      cursor: pointer;
-      color: #707070;
-      font-size: 0.8rem;
-      line-height: 1;
-      transition: background-color 0.15s ease, border-color 0.15s ease,
-        color 0.15s ease;
-      flex-shrink: 0;
-    }
+            .copy-btn {
+                display: none;
+                align-items: center;
+                justify-content: center;
+                background: none;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 0.2rem 0.45rem;
+                cursor: pointer;
+                color: #707070;
+                font-size: 0.8rem;
+                line-height: 1;
+                transition:
+                    background-color 0.15s ease,
+                    border-color 0.15s ease,
+                    color 0.15s ease;
+                flex-shrink: 0;
+            }
 
-    .copy-btn:hover {
-      background-color: #f0f0f0;
-      border-color: #b0b0b0;
-      color: #404040;
-    }
+            .copy-btn:hover {
+                background-color: #f0f0f0;
+                border-color: #b0b0b0;
+                color: #404040;
+            }
 
-    .copy-btn:focus-visible {
-      outline: 2px solid #1a6dd4;
-      outline-offset: 2px;
-    }
+            .copy-btn:focus-visible {
+                outline: 2px solid #1a6dd4;
+                outline-offset: 2px;
+            }
 
-    .copy-btn svg {
-      width: 14px;
-      height: 14px;
-      fill: currentColor;
-    }
+            .copy-btn svg {
+                width: 14px;
+                height: 14px;
+                fill: currentColor;
+            }
 
-    .copy-btn.copied {
-      color: #2a7d3f;
-      border-color: #2a7d3f;
-    }
+            .copy-btn.copied {
+                color: #2a7d3f;
+                border-color: #2a7d3f;
+            }
 
-    .bio {
-      font-size: 1.05rem;
-      color: #333333;
-      line-height: 1.65;
-      margin-bottom: 1.5rem;
-      text-align: left;
-    }
+            .bio {
+                font-size: 1.05rem;
+                color: #333333;
+                line-height: 1.65;
+                margin-bottom: 1.5rem;
+                text-align: left;
+            }
 
-    .bio p {
-      margin-bottom: 0.65rem;
-    }
+            .bio p {
+                margin-bottom: 0.65rem;
+            }
 
-    .bio p:last-child {
-      margin-bottom: 0;
-    }
+            .bio p:last-child {
+                margin-bottom: 0;
+            }
 
-    .bio a {
-      word-break: break-all;
-    }
+            .bio a {
+                word-break: break-all;
+            }
 
-    .links {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      text-align: left;
-      border-top: 1px solid #eaeaea;
-      padding-top: 1.5rem;
-    }
+            .links {
+                list-style: none;
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                text-align: left;
+                border-top: 1px solid #eaeaea;
+                padding-top: 1.5rem;
+            }
 
-    .links li {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
+            .links li {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
 
-    .links li::before {
-      content: "→";
-      color: #a0a0a0;
-      font-size: 0.9rem;
-      flex-shrink: 0;
-    }
+            .follow-link {
+                display: inline-block;
+                margin-bottom: 1.5rem;
+                padding: 0.4rem 1rem;
+                border: 1px solid #d0d0d0;
+                border-radius: 20px;
+                font-size: 0.9rem;
+                color: #606060;
+                text-decoration: none;
+                transition:
+                    border-color 0.15s ease,
+                    color 0.15s ease;
+            }
 
-    .links a {
-      font-size: 0.95rem;
-      word-break: break-all;
-    }
+            .follow-link:hover,
+            .follow-link:focus {
+                border-color: #1a6dd4;
+                color: #1a6dd4;
+                text-decoration: none;
+            }
 
-    footer {
-      width: 100%;
-      max-width: 600px;
-      padding: 1rem 1.5rem 2rem;
-      text-align: center;
-    }
+            .follow-link:focus-visible {
+                outline: 2px solid #1a6dd4;
+                outline-offset: 2px;
+            }
 
-    .footer-text {
-      font-size: 0.8rem;
-      color: #a0a0a0;
-    }
+            .links li::before {
+                content: "→";
+                color: #a0a0a0;
+                font-size: 0.9rem;
+                flex-shrink: 0;
+            }
 
-    .footer-text a {
-      color: #a0a0a0;
-    }
+            .links a {
+                font-size: 0.95rem;
+                word-break: break-all;
+            }
 
-    .footer-text a:hover {
-      color: #707070;
-    }
+            footer {
+                width: 100%;
+                max-width: 600px;
+                padding: 1rem 1.5rem 2rem;
+                text-align: center;
+            }
 
-    @media (max-width: 480px) {
-      main {
-        padding: 2rem 1rem 1.5rem;
-      }
+            .footer-text {
+                font-size: 0.8rem;
+                color: #a0a0a0;
+            }
 
-      .profile-card {
-        padding: 2rem 1.25rem;
-      }
+            .footer-text a {
+                color: #a0a0a0;
+            }
 
-      .avatar {
-        width: 96px;
-        height: 96px;
-      }
+            .footer-text a:hover {
+                color: #707070;
+            }
 
-      .avatar-placeholder {
-        width: 96px;
-        height: 96px;
-      }
+            @media (max-width: 480px) {
+                main {
+                    padding: 2rem 1rem 1.5rem;
+                }
 
-      .avatar-placeholder svg {
-        width: 40px;
-        height: 40px;
-      }
+                .profile-card {
+                    padding: 2rem 1.25rem;
+                }
 
-      .display-name {
-        font-size: 1.5rem;
-      }
-    }
-  </style>
-</head>
-<body>
-  <main>
-    <article class="profile-card">
-      <div class="avatar-container" id="avatar-container">
-        <img
-          class="avatar"
-          src="{{avatar_url}}"
-          alt="Avatar for {{display_name}}"
-          width="112"
-          height="112"
-          id="avatar-img"
-        >
-      </div>
+                .avatar {
+                    width: 96px;
+                    height: 96px;
+                }
 
-      <h1 class="display-name">{{display_name}}</h1>
+                .avatar-placeholder {
+                    width: 96px;
+                    height: 96px;
+                }
 
-      <div class="handle-row">
-        <span class="handle" id="handle-text">{{handle}}</span>
-        <button
-          class="copy-btn"
-          id="copy-btn"
-          type="button"
-          aria-label="Copy fediverse handle to clipboard"
-          title="Copy handle"
-        >
-          <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/>
-          </svg>
-          <svg id="check-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" style="display:none">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-          </svg>
-        </button>
-      </div>
+                .avatar-placeholder svg {
+                    width: 40px;
+                    height: 40px;
+                }
 
-      <div class="bio">
-        {{bio}}
-      </div>
+                .display-name {
+                    font-size: 1.5rem;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <article class="profile-card">
+                <div class="avatar-container" id="avatar-container">
+                    <img
+                        class="avatar"
+                        src="{{avatar_url}}"
+                        alt="Avatar for {{display_name}}"
+                        width="112"
+                        height="112"
+                        id="avatar-img"
+                    />
+                </div>
 
-      <ul class="links" id="links-list">
-        {{links}}
-      </ul>
-    </article>
-  </main>
+                <h1 class="display-name">{{display_name}}</h1>
 
-  <footer>
-    <p class="footer-text">
-      Powered by <a href="https://github.com/tinker-social/tinker">Tinker</a>
-    </p>
-  </footer>
+                <div class="handle-row">
+                    <span class="handle" id="handle-text">{{handle}}</span>
+                    <button
+                        class="copy-btn"
+                        id="copy-btn"
+                        type="button"
+                        aria-label="Copy fediverse handle to clipboard"
+                        title="Copy handle"
+                    >
+                        <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                                d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"
+                            />
+                        </svg>
+                        <svg
+                            id="check-icon"
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            style="display: none"
+                        >
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                        </svg>
+                    </button>
+                </div>
 
-  <script>
-    (function () {
-      "use strict";
+                <a class="follow-link" href="{{actor_uri}}">Follow me on the Fediverse</a>
 
-      // Hide avatar container if there is no avatar URL.
-      var avatarImg = document.getElementById("avatar-img");
-      var avatarContainer = document.getElementById("avatar-container");
-      if (avatarImg && avatarContainer) {
-        var src = avatarImg.getAttribute("src");
-        if (!src || src === "{{avatar_url}}") {
-          // No avatar provided — show a placeholder silhouette.
-          avatarContainer.innerHTML =
-            '<span class="avatar-placeholder" role="img" aria-label="No avatar">' +
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">' +
-            '<path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>' +
-            "</svg></span>";
-        }
-      }
+                <div class="bio">{{bio}}</div>
 
-      // Hide links list if it has no items.
-      var linksList = document.getElementById("links-list");
-      if (linksList && linksList.children.length === 0) {
-        linksList.style.display = "none";
-      }
+                <ul class="links" id="links-list">
+                    {{links}}
+                </ul>
+            </article>
+        </main>
 
-      // Progressive enhancement: show copy button only if clipboard API is available.
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        var copyBtn = document.getElementById("copy-btn");
-        if (copyBtn) {
-          copyBtn.style.display = "inline-flex";
+        <footer>
+            <p class="footer-text">Powered by <a href="https://github.com/tinker-social/tinker">Tinker</a></p>
+        </footer>
 
-          copyBtn.addEventListener("click", function () {
-            var handleText = document.getElementById("handle-text");
-            if (!handleText) return;
+        <script>
+            (function () {
+                "use strict";
 
-            var text = handleText.textContent || "";
-            navigator.clipboard.writeText(text.trim()).then(
-              function () {
-                var copyIcon = document.getElementById("copy-icon");
-                var checkIcon = document.getElementById("check-icon");
-                copyBtn.classList.add("copied");
-                if (copyIcon) copyIcon.style.display = "none";
-                if (checkIcon) checkIcon.style.display = "block";
+                // Hide avatar container if there is no avatar URL.
+                var avatarImg = document.getElementById("avatar-img");
+                var avatarContainer = document.getElementById("avatar-container");
+                if (avatarImg && avatarContainer) {
+                    var src = avatarImg.getAttribute("src");
+                    if (!src || src === "{{avatar_url}}") {
+                        // No avatar provided — show a placeholder silhouette.
+                        avatarContainer.innerHTML =
+                            '<span class="avatar-placeholder" role="img" aria-label="No avatar">' +
+                            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">' +
+                            '<path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>' +
+                            "</svg></span>";
+                    }
+                }
 
-                setTimeout(function () {
-                  copyBtn.classList.remove("copied");
-                  if (copyIcon) copyIcon.style.display = "block";
-                  if (checkIcon) checkIcon.style.display = "none";
-                }, 2000);
-              },
-              function () {
-                // Clipboard write failed — silently ignore.
-              }
-            );
-          });
-        }
-      }
-    })();
-  </script>
-</body>
+                // Hide links list if it has no items.
+                var linksList = document.getElementById("links-list");
+                if (linksList && linksList.children.length === 0) {
+                    linksList.style.display = "none";
+                }
+
+                // Progressive enhancement: show copy button only if clipboard API is available.
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    var copyBtn = document.getElementById("copy-btn");
+                    if (copyBtn) {
+                        copyBtn.style.display = "inline-flex";
+
+                        copyBtn.addEventListener("click", function () {
+                            var handleText = document.getElementById("handle-text");
+                            if (!handleText) return;
+
+                            var text = handleText.textContent || "";
+                            navigator.clipboard.writeText(text.trim()).then(
+                                function () {
+                                    var copyIcon = document.getElementById("copy-icon");
+                                    var checkIcon = document.getElementById("check-icon");
+                                    copyBtn.classList.add("copied");
+                                    if (copyIcon) copyIcon.style.display = "none";
+                                    if (checkIcon) checkIcon.style.display = "block";
+
+                                    setTimeout(function () {
+                                        copyBtn.classList.remove("copied");
+                                        if (copyIcon) copyIcon.style.display = "block";
+                                        if (checkIcon) checkIcon.style.display = "none";
+                                    }, 2000);
+                                },
+                                function () {
+                                    // Clipboard write failed — silently ignore.
+                                },
+                            );
+                        });
+                    }
+                }
+            })();
+        </script>
+    </body>
 </html>
