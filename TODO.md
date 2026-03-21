@@ -301,9 +301,10 @@ Real-time notification push to the admin.
 
 - [ ] `asyncio.Queue` bridge: inbox pipeline (WP-10) emits notification events to the queue
 - [ ] SSE endpoint (admin-protected): reads from queue, streams events to client (§5.3)
-- [ ] `<notification-badge>` Web Component: owns the EventSource SSE connection, updates badge count on new events
+- [ ] Unread count JSON API endpoint (`GET /admin/api/notifications/unread-count`): returns count of `read = false` rows
+- [ ] `<notification-badge>` Web Component: fetches unread count on init, increments on each SSE event, resets to zero on `notifications-read` DOM event (§5.3)
 - [ ] Auto-reconnect on disconnect (handled within `<notification-badge>`)
-- [ ] Tests for SSE event emission, delivery, reconnection
+- [ ] Tests for SSE event emission, delivery, reconnection, unread count endpoint
 
 **Produces:** Admin sees real-time notification indicators.
 
@@ -317,12 +318,13 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 
 - [ ] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination; join against `following` table to include `is_following` boolean per actor on each notification item
 - [ ] `<notification-list>` Web Component: fetches notifications JSON, renders the list, handles "load more" pagination
-- [ ] `<notification-item>` Web Component: renders a single notification — type, actor, object reference, timestamp, read state
+- [ ] `<notification-item>` Web Component: renders a single notification — type, actor, object reference, timestamp
 - [ ] Follow notification items: include Follow button (not following back) or Unfollow text link (already following back) actionable inline (§5.5)
 - [ ] Reply notification items: display reply content in a styled container within the notification row, with like/reply/boost action icons (§5.5)
-- [ ] Mark-as-read behaviour: JSON API endpoint to mark individual or all notifications as read; `<notification-item>` updates state accordingly
+- [ ] Mark-all-read API endpoint (`POST /admin/api/notifications/mark-all-read`): sets all `read = false` rows to `read = true`
+- [ ] `<notification-list>` calls mark-all-read on init, then dispatches `notifications-read` on `document` to reset `<notification-badge>` (§5.5)
 - [ ] Static HTML shell at `static/admin/notifications.html` that loads the Web Components
-- [ ] Tests for notifications JSON API (auth, response format, pagination), mark-as-read, follow-back action, inline reply content
+- [ ] Tests for notifications JSON API (auth, response format, pagination), mark-all-read endpoint, `notifications-read` event dispatch, follow-back action, inline reply content
 
 **Produces:** Browsable notification history.
 

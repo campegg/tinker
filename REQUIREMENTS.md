@@ -202,6 +202,8 @@ A Server-Sent Events connection pushes notification-type events to the admin in 
 
 SSE is scoped to notifications only — the timeline uses polling (§5.2). This keeps the SSE handler decoupled from the full inbox processing pipeline. A `<notification-badge>` Web Component owns the SSE `EventSource` connection, establishes it on page load, and reconnects automatically on disconnect.
 
+**Badge count:** On initialisation, `<notification-badge>` fetches the current unread count from a dedicated JSON API endpoint (`GET /admin/api/notifications/unread-count`), then increments the count by one for each incoming SSE event. This ensures the badge shows the correct count after a page reload or reconnect, not just new events received in the current session. The badge also listens on `document` for a `notifications-read` custom DOM event; when received, it resets the count to zero.
+
 **Implementation:** The inbox processing pipeline emits notification events to an in-process `asyncio.Queue`. The SSE endpoint reads from this queue and streams events to the connected admin client. Since this is a single-user app, one queue and one consumer is sufficient.
 
 ### 5.4 Compose
@@ -225,6 +227,8 @@ Aggregated, persistent view of the same notification types pushed via SSE:
 Notifications are stored in the database and served via a paginated JSON API endpoint. A Web Component fetches and renders the notification list. The SSE events (§5.3) provide real-time alerts; this view provides the browsable history.
 
 **Notification model fields:** `type` (follow/like/boost/reply), `actor_uri`, `actor_name`, `object_uri`, `content` (sanitised HTML reply text, for reply notifications), `read`.
+
+**Mark-as-read on page load:** When the notifications view initialises, `<notification-list>` immediately calls a mark-all-read API endpoint (`POST /admin/api/notifications/mark-all-read`), which sets all `read = false` rows to `read = true`. After the call succeeds, the component dispatches a `notifications-read` custom DOM event on `document`, which the `<notification-badge>` component (present in the navigation on every admin page) listens for and uses to reset its count to zero. There is no per-item read toggle — viewing the notifications page is the read trigger.
 
 **Follow notification items** include an inline Follow button (if not already following back) or an Unfollow text link (if already following back), actionable directly from the notification row.
 
@@ -251,7 +255,7 @@ Public pages (`/`, `/{actor}`, `/login`) are **not** part of the admin interface
 - **Interaction toggles:** Like, boost, and follow/unfollow components use `fetch()` to call the admin JSON API and update their own state in place — no full page reload.
 - **Inline reply:** A Web Component handles opening and managing an inline compose form via DOM manipulation.
 - **Image upload:** Uses `fetch()` with `FormData`. The upload component shows a client-side preview before submission.
-- **Notification badges:** A `<notification-badge>` Web Component owns the SSE `EventSource` connection and updates a notification count indicator in the navigation without a page reload.
+- **Notification badges:** A `<notification-badge>` Web Component owns the SSE `EventSource` connection, initialises its count from the unread count API endpoint, increments on each SSE event, and resets to zero when it receives a `notifications-read` DOM event (dispatched by `<notification-list>` after marking all read).
 - **JS constraints:** Vanilla JavaScript only. No framework, no module bundler, no TypeScript. No build step. JS files served as static assets from `static/js/`. Progressive enhancement where feasible.
 
 ## 6. Background Processing
