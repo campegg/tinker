@@ -4,8 +4,10 @@ Provides auth-protected JSON endpoints consumed by admin Web Components.
 All state-changing endpoints (POST, PATCH, DELETE) require a valid
 ``X-CSRF-Token`` header matching the session's CSRF token.
 
-Note endpoints are the first set of routes; additional endpoint groups
-will be added in later work packages (WP-13+).
+Endpoint groups:
+
+- **Notes** (``/admin/api/notes``): create, edit, delete.
+- **Media** (``/admin/api/media``): upload image attachments.
 """
 
 from __future__ import annotations
@@ -23,6 +25,9 @@ from app.federation.outbox import (
     build_delete_activity,
     build_update_activity,
 )
+from app.media import ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, process_image, save_upload
+from app.models.media_attachment import MediaAttachment
+from app.repositories.media_attachment import MediaAttachmentRepository
 from app.services.keypair import KeypairService
 from app.services.note import NoteService
 
@@ -243,3 +248,85 @@ async def delete_note(note_id: str) -> Response:
     )
 
     return Response(response="", status=204)
+
+
+# ---------------------------------------------------------------------------
+# Media
+# ---------------------------------------------------------------------------
+
+
+@api.route("/media", methods=["POST"])
+@require_auth
+async def upload_media() -> Response:
+    """Upload an image file and create a :class:`~app.models.media_attachment.MediaAttachment`.
+
+    Accepts a ``multipart/form-data`` request with:
+
+    - ``file`` (required): the image file.
+    - ``alt_text`` (optional): accessibility description string.
+
+    Validates MIME type (JPEG, PNG, WebP, GIF, HEIC/HEIF) and file size
+    (max 10 MiB), strips all metadata, optimises, and stores the result.
+
+    Returns:
+        ``201 Created`` with ``{"id": "...", "url": "/media/uploads/..."}``
+        on success.  ``400`` on validation failure.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    files = await request.files
+    file = files.get("file")
+    if file is None:
+        return _json_response({"error": "No file uploaded."}, status=400)
+
+    # MIME type validation from the uploaded Content-Type.
+    content_type: str = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type not in ALLOWED_MIME_TYPES:
+        return _json_response(
+            {
+                "error": (
+                    f"Unsupported file type {content_type!r}. "
+                    f"Allowed: {', '.join(sorted(ALLOWED_MIME_TYPES))}."
+                )
+            },
+            status=400,
+        )
+
+    raw: bytes = file.read()
+    max_mib = MAX_FILE_SIZE_BYTES // (1024 * 1024)
+    if len(raw) > MAX_FILE_SIZE_BYTES:
+        return _json_response(
+            {"error": f"File too large. Maximum size is {max_mib} MiB."},
+            status=400,
+        )
+
+    try:
+        processed, output_mime = process_image(raw)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, status=400)
+
+    media_path: str = current_app.config["TINKER_MEDIA_PATH"]
+    relative_path = save_upload(processed, output_mime, media_path)
+
+    form = await request.form
+    alt_text: str | None = form.get("alt_text") or None
+
+    session: AsyncSession = g.db_session
+    attachment = MediaAttachment(
+        file_path=relative_path,
+        mime_type=output_mime,
+        alt_text=alt_text,
+    )
+    repo = MediaAttachmentRepository(session)
+    await repo.add(attachment)
+    await session.commit()
+
+    return _json_response(
+        {
+            "id": str(attachment.id),
+            "url": f"/media/{relative_path}",
+            "mime_type": output_mime,
+        },
+        status=201,
+    )

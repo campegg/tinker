@@ -130,6 +130,10 @@ class InboxContext:
         username: The local actor username.
         notification_queue: Queue for emitting real-time notification events
             to the SSE endpoint (WP-16).
+        media_path: Absolute path to the media storage directory.  When
+            set, remote actor avatars are downloaded and cached locally
+            during Follow processing so they are never served from remote
+            URLs.  An empty string disables avatar proxying.
     """
 
     session_factory: async_sessionmaker[AsyncSession]
@@ -139,6 +143,7 @@ class InboxContext:
     domain: str
     username: str
     notification_queue: asyncio.Queue[dict[str, Any]]
+    media_path: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +456,7 @@ async def _handle_follow(
     remote_actor = await actor_svc.get_by_uri(actor_uri)
     inbox_url = remote_actor.inbox_url if remote_actor else None
     display_name = remote_actor.display_name if remote_actor else None
+    remote_avatar_url = remote_actor.avatar_url if remote_actor else None
 
     if not inbox_url:
         logger.error(
@@ -458,6 +464,14 @@ async def _handle_follow(
             actor_uri,
         )
         return
+
+    # Proxy the remote avatar to local storage so it is never served from
+    # a remote URL directly (prevents IP leakage and tracking pixels).
+    local_avatar_url: str | None = None
+    if remote_avatar_url and ctx.media_path:
+        from app.media import proxy_avatar
+
+        local_avatar_url = await proxy_avatar(remote_avatar_url, ctx.media_path)
 
     # Upsert the follower record.
     follower_repo = FollowerRepository(session)
@@ -467,6 +481,8 @@ async def _handle_follow(
         existing.status = "accepted"
         if display_name:
             existing.display_name = display_name
+        if local_avatar_url:
+            existing.avatar_url = local_avatar_url
         await session.flush()
         follower = existing
     else:
@@ -476,6 +492,7 @@ async def _handle_follow(
             inbox_url=inbox_url,
             shared_inbox_url=shared_inbox_url,
             display_name=display_name,
+            avatar_url=local_avatar_url,
             status="accepted",
         )
         follower_repo._session.add(follower)

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from quart import Blueprint, Response, abort, current_app, g, request
+from quart import Blueprint, Response, abort, current_app, g, request, send_file
 
 from app.federation.actor import build_actor_document
 from app.federation.inbox import InboxContext, check_inbox_rate_limit, process_activity
@@ -798,6 +798,7 @@ async def inbox(username: str) -> Response:
     semaphore: asyncio.Semaphore = current_app.config["DELIVERY_SEMAPHORE"]
     session_factory = current_app.config["DB_SESSION_FACTORY"]
     notification_queue: asyncio.Queue[dict[str, Any]] = current_app.config["NOTIFICATION_QUEUE"]
+    media_path: str = current_app.config.get("TINKER_MEDIA_PATH", "")
 
     ctx = InboxContext(
         session_factory=session_factory,
@@ -807,6 +808,7 @@ async def inbox(username: str) -> Response:
         domain=domain,
         username=configured_username,
         notification_queue=notification_queue,
+        media_path=media_path,
     )
 
     # Store a reference in the module-level set so the task is not
@@ -819,6 +821,39 @@ async def inbox(username: str) -> Response:
     _task.add_done_callback(_inbox_tasks.discard)
 
     return Response(response="", status=202)
+
+
+@public.route("/media/<path:filename>", methods=["GET"])
+async def serve_media(filename: str) -> Response:
+    """Serve an uploaded or proxied media file from the local media directory.
+
+    Resolves the file path relative to the configured ``TINKER_MEDIA_PATH``
+    and validates that it does not escape the directory (path traversal
+    prevention).  The response MIME type is inferred from the file's suffix.
+
+    In production, Caddy should serve ``/media/`` directly rather than
+    routing through the app.  This endpoint is for development use only.
+
+    Args:
+        filename: The path relative to the media root (e.g.
+            ``"uploads/abc.jpg"`` or ``"avatars/def.jpg"``).
+
+    Returns:
+        The file as a response, or ``404`` if not found.
+    """
+    media_root = Path(current_app.config["TINKER_MEDIA_PATH"]).resolve()
+
+    try:
+        full_path = (media_root / filename).resolve()
+        # Ensure the resolved path is inside the media root (path traversal guard).
+        full_path.relative_to(media_root)
+    except ValueError:
+        abort(404)
+
+    if not full_path.exists() or not full_path.is_file():
+        abort(404)
+
+    return await send_file(full_path)
 
 
 def _json_dumps(obj: dict[str, Any]) -> str:
