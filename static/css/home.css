@@ -53,7 +53,7 @@ body {
         font-size: 1.5rem;
         line-height: 1.5;
         color: var(--text-secondary);
-        transition: opacity 0.2s ease-in-out;
+        view-transition-name: handle;
     }
 
     .home-icons {
@@ -96,5 +96,52 @@ body {
                 }
             }
         }
+    }
+}
+
+/*---------- handle view transition ----------*/
+
+/* The rest of the page is static — suppress the root crossfade so only
+   the handle element animates. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+/* The group pseudo-element morphs the element's position and size between
+   old and new states, giving the smooth centering slide. */
+::view-transition-group(handle) {
+    animation-duration: 0.3s;
+    animation-timing-function: ease-in-out;
+}
+
+/* Old and new image snapshots crossfade simultaneously over the same
+   duration as the position morph, so nothing ever goes fully invisible. */
+::view-transition-old(handle) {
+    animation: 0.3s ease-in-out both handle-fade-out;
+}
+
+::view-transition-new(handle) {
+    animation: 0.3s ease-in-out both handle-fade-in;
+}
+
+@keyframes handle-fade-out {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes handle-fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
     }
 }
