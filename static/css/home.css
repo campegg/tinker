@@ -106,24 +106,47 @@ body {
 ::view-transition-old(root),
 ::view-transition-new(root) {
     animation: none;
-    mix-blend-mode: normal;
+    mix-blend-mode: lighten;
 }
 
 /* The group pseudo-element morphs the element's position and size between
    old and new states, giving the smooth centering slide. */
 ::view-transition-group(handle) {
-    animation-duration: 0.3s;
+    animation-duration: 0.125s;
     animation-timing-function: ease-in-out;
 }
 
-/* Old and new image snapshots crossfade simultaneously over the same
-   duration as the position morph, so nothing ever goes fully invisible. */
+/* Allow snapshots to overflow the group box so the wider one isn't
+   clipped as the group morphs to a narrower width. */
+::view-transition-image-pair(handle) {
+    overflow: visible;
+}
+
+/* Override the UA default of width/height: 100% (which stretches snapshots
+   to fill the animating group, causing the scaling). Use natural snapshot
+   dimensions instead, centred within the group at all times. */
 ::view-transition-old(handle) {
-    animation: 0.3s ease-in-out both handle-fade-out;
+    animation: 0.15s ease-in-out both handle-fade-out;
+    width: auto;
+    height: auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
 }
 
 ::view-transition-new(handle) {
-    animation: 0.3s ease-in-out both handle-fade-in;
+    animation: 0.125s ease-in-out both handle-fade-in;
+    width: auto;
+    height: auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
 }
 
 @keyframes handle-fade-out {
