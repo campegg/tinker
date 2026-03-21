@@ -180,6 +180,9 @@ _login_template_cache: str | None = None
 def _load_login_template() -> str:
     """Load the login HTML template from disk, caching after first read.
 
+    In debug mode the cache is bypassed so that changes to the HTML file
+    are visible immediately without restarting the server.
+
     Returns:
         The raw HTML string with ``{{placeholder}}`` markers.
 
@@ -187,11 +190,13 @@ def _load_login_template() -> str:
         FileNotFoundError: If the template file does not exist.
     """
     global _login_template_cache
-    if _login_template_cache is not None:
+    if not current_app.debug and _login_template_cache is not None:
         return _login_template_cache
     template_path = Path(current_app.static_folder or "static") / "pages" / "login.html"
-    _login_template_cache = template_path.read_text(encoding="utf-8")
-    return _login_template_cache
+    content = template_path.read_text(encoding="utf-8")
+    if not current_app.debug:
+        _login_template_cache = content
+    return content
 
 
 def _render_login_page(csrf_token: str, error: str | None = None) -> str:

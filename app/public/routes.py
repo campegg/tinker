@@ -35,6 +35,9 @@ _home_template_cache: str | None = None
 def _load_home_template() -> str:
     """Load the home page HTML template from disk, caching after first read.
 
+    In debug mode the cache is bypassed so that changes to the HTML file
+    are visible immediately without restarting the server.
+
     Returns:
         The raw HTML string for the home page.
 
@@ -43,16 +46,21 @@ def _load_home_template() -> str:
             expected path.
     """
     global _home_template_cache
-    if _home_template_cache is not None:
+    if not current_app.debug and _home_template_cache is not None:
         return _home_template_cache
 
     template_path = Path(current_app.static_folder or "static") / "pages" / "home.html"
-    _home_template_cache = template_path.read_text(encoding="utf-8")
-    return _home_template_cache
+    content = template_path.read_text(encoding="utf-8")
+    if not current_app.debug:
+        _home_template_cache = content
+    return content
 
 
 def _load_profile_template() -> str:
     """Load the profile HTML template from disk, caching after first read.
+
+    In debug mode the cache is bypassed so that changes to the HTML file
+    are visible immediately without restarting the server.
 
     Returns:
         The raw HTML string with ``{{placeholder}}`` markers.
@@ -62,12 +70,14 @@ def _load_profile_template() -> str:
             expected path.
     """
     global _profile_template_cache
-    if _profile_template_cache is not None:
+    if not current_app.debug and _profile_template_cache is not None:
         return _profile_template_cache
 
     template_path = Path(current_app.static_folder or "static") / "pages" / "profile.html"
-    _profile_template_cache = template_path.read_text(encoding="utf-8")
-    return _profile_template_cache
+    content = template_path.read_text(encoding="utf-8")
+    if not current_app.debug:
+        _profile_template_cache = content
+    return content
 
 
 def _wants_json_ld(accept_header: str | None) -> bool:

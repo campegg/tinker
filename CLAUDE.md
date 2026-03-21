@@ -149,7 +149,11 @@ Reference these exact commands — never infer or abbreviate.
 
 - Install dependencies: `uv sync`
 - Install with dev dependencies: `uv sync --group dev`
-- Run development server: `uv run quart run --reload` (or via hypercorn)
+- Run development server: `uv run quart run --reload`
+  - `QUART_APP` and `QUART_DEBUG` are set in `.env` and loaded automatically.
+  - `--reload` watches `.py` files and restarts on change. With `watchfiles` installed (it is, as a dev dependency), Werkzeug uses it automatically for faster, OS-native file event detection instead of polling.
+  - `QUART_DEBUG=true` enables detailed error pages and bypasses the in-memory HTML template caches, so changes to files in `static/pages/` are reflected on the next request without a restart.
+  - Static assets (CSS, JS, fonts) are always read from disk on each request in dev — no restart needed for those changes.
 - Run tests: `uv run pytest`
 - Run tests with coverage: `uv run pytest --cov=app --cov-report=term-missing`
 - Lint: `uv run ruff check .`
