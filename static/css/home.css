@@ -44,11 +44,11 @@ body {
 /*---------- heading ----------*/
 
 .home-heading {
+    margin-block-end: 0.125rem;
     font-size: 4rem;
     font-weight: normal;
     line-height: normal;
     color: var(--text);
-    margin-bottom: 2.375rem;
 }
 
 /*---------- handle ----------*/
@@ -123,12 +123,6 @@ body {
     display: block;
     width: 100%;
     height: 100%;
-}
-
-/*---------- focus ----------*/
-
-.icon-btn:focus-visible {
-    outline: 2px solid var(--text-secondary);
-    outline-offset: 4px;
-    border-radius: 2px;
+    /* viewBox is 128×128, icons display at 1rem (16px): 16 SVG units = 2px */
+    stroke-width: 16;
 }
