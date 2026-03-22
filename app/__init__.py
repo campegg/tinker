@@ -31,7 +31,14 @@ def create_app() -> Quart:
 
     # Session cookie security — values must be set as native Python types, not
     # strings, so they are applied after from_mapping().
-    app.config["SESSION_COOKIE_SECURE"] = True
+    # Secure is disabled when QUART_DEBUG is set so the dev server (plain HTTP)
+    # can set and receive the cookie; in production Caddy always serves HTTPS.
+    # NOTE: app.debug is not yet set by the CLI at factory time, so we read
+    # the env var directly (load_config() has already called load_dotenv()).
+    import os as _os
+
+    _debug = _os.environ.get("QUART_DEBUG", "").lower() in ("1", "true", "yes")
+    app.config["SESSION_COOKIE_SECURE"] = not _debug
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
 
