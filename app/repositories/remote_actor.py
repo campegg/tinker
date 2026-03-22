@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.remote_actor import RemoteActor
@@ -47,6 +49,24 @@ class RemoteActorRepository(BaseRepository[RemoteActor]):
         """
         result = await self._session.execute(select(RemoteActor).where(RemoteActor.uri == uri))
         return result.scalars().first()
+
+    async def get_by_uris(self, uris: Sequence[str]) -> dict[str, RemoteActor]:
+        """Fetch multiple remote actors by their ActivityPub URIs in one query.
+
+        Returns a mapping of URI to actor for all URIs that have a cached
+        record. URIs without a cached record are absent from the result.
+
+        Args:
+            uris: A sequence of ActivityPub URIs to look up.
+
+        Returns:
+            A dict mapping each found URI to its :class:`RemoteActor` record.
+        """
+        if not uris:
+            return {}
+        result = await self._session.execute(select(RemoteActor).where(RemoteActor.uri.in_(uris)))
+        actors = result.scalars().all()
+        return {a.uri: a for a in actors}
 
     async def get_by_handle(self, handle: str) -> RemoteActor | None:
         """Fetch a remote actor by its user@domain handle.

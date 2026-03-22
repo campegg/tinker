@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.like import Like
@@ -52,6 +54,25 @@ class LikeRepository(BaseRepository[Like]):
         """
         result = await self._session.execute(select(Like).where(Like.note_uri == note_uri))
         return result.scalars().first()
+
+    async def get_liked_uris_by_actor(self, actor_uri: str) -> set[str]:
+        """Return the set of note URIs liked by the given actor.
+
+        Used to annotate timeline items with whether the local user has
+        already liked each post, so the UI can render the like button in
+        the correct state.
+
+        Args:
+            actor_uri: The ActivityPub URI of the actor whose likes to fetch.
+
+        Returns:
+            A set of note URI strings that the actor has liked.
+        """
+        result = await self._session.execute(
+            select(Like.note_uri).where(Like.actor_uri == actor_uri)
+        )
+        rows: Sequence[str] = result.scalars().all()
+        return set(rows)
 
     async def get_by_activity_uri(self, activity_uri: str) -> Like | None:
         """Fetch a like by its ActivityPub activity URI.

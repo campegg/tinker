@@ -13,6 +13,7 @@ from sqlalchemy import select
 if TYPE_CHECKING:
     import uuid
     from collections.abc import Sequence
+    from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,6 +74,58 @@ class TimelineItemRepository(BaseRepository[TimelineItem]):
         stmt = stmt.order_by(TimelineItem.received_at.desc()).limit(limit)
 
         result = await self._session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_since_dt(
+        self,
+        since_dt: datetime,
+        limit: int = 20,
+    ) -> Sequence[TimelineItem]:
+        """Fetch timeline items received strictly after a given timestamp.
+
+        Used by the polling endpoint to return only items newer than the
+        most recent item the client has already rendered.
+
+        Args:
+            since_dt: The exclusive lower bound — items received at or
+                before this timestamp are excluded.
+            limit: Maximum number of items to return. Defaults to 20.
+
+        Returns:
+            A sequence of timeline items ordered from newest to oldest.
+        """
+        result = await self._session.execute(
+            select(TimelineItem)
+            .where(TimelineItem.received_at > since_dt)
+            .order_by(TimelineItem.received_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def get_before_dt(
+        self,
+        before_dt: datetime,
+        limit: int = 20,
+    ) -> Sequence[TimelineItem]:
+        """Fetch timeline items received strictly before a given timestamp.
+
+        Used by the pagination endpoint to load older items beyond the
+        initial page.
+
+        Args:
+            before_dt: The exclusive upper bound — items received at or
+                after this timestamp are excluded.
+            limit: Maximum number of items to return. Defaults to 20.
+
+        Returns:
+            A sequence of timeline items ordered from newest to oldest.
+        """
+        result = await self._session.execute(
+            select(TimelineItem)
+            .where(TimelineItem.received_at < before_dt)
+            .order_by(TimelineItem.received_at.desc())
+            .limit(limit)
+        )
         return result.scalars().all()
 
     async def get_by_object_uri(self, uri: str) -> TimelineItem | None:

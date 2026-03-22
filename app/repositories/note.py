@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,6 +76,58 @@ class NoteRepository(BaseRepository[Note]):
         result = await self._session.execute(select(func.count()).select_from(Note))
         count: int | None = result.scalar()
         return count if count is not None else 0
+
+    async def get_since_dt(
+        self,
+        since_dt: datetime,
+        limit: int = 20,
+    ) -> Sequence[Note]:
+        """Fetch notes published strictly after a given timestamp.
+
+        Used by the timeline polling endpoint to return only items newer
+        than the most recent item the client has seen.
+
+        Args:
+            since_dt: The exclusive lower bound — notes published at or
+                before this timestamp are excluded.
+            limit: Maximum number of notes to return. Defaults to 20.
+
+        Returns:
+            A sequence of notes ordered from newest to oldest.
+        """
+        result = await self._session.execute(
+            select(Note)
+            .where(Note.published_at > since_dt)
+            .order_by(Note.published_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def get_before_dt(
+        self,
+        before_dt: datetime,
+        limit: int = 20,
+    ) -> Sequence[Note]:
+        """Fetch notes published strictly before a given timestamp.
+
+        Used by the timeline pagination endpoint to load older items
+        beyond the initial page.
+
+        Args:
+            before_dt: The exclusive upper bound — notes published at or
+                after this timestamp are excluded.
+            limit: Maximum number of notes to return. Defaults to 20.
+
+        Returns:
+            A sequence of notes ordered from newest to oldest.
+        """
+        result = await self._session.execute(
+            select(Note)
+            .where(Note.published_at < before_dt)
+            .order_by(Note.published_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
 
     async def get_page(
         self,
