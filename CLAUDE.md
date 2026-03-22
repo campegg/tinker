@@ -60,6 +60,7 @@ tinker/
 │   ├── repositories/        # Data access layer (one per model)
 │   ├── services/
 │   │   ├── keypair.py       # RSA keypair generation and rotation
+│   │   ├── note.py          # Note creation, editing, deletion; Markdown rendering
 │   │   ├── remote_actor.py  # Remote actor fetching and caching (TTL: 24h)
 │   │   └── settings.py      # Settings get/set with typed accessors; seeds defaults
 │   ├── federation/          # ActivityPub protocol logic
@@ -162,56 +163,7 @@ When in doubt about how an activity or object should be structured, check what M
 
 ### HTTP Signatures
 
-**Never implement signature construction or verification manually. Use `apsig`.**
-
-```bash
-pip install apsig
-```
-
-`apsig` implements draft-cavage-http-signatures-12, Linked Data Signatures, and Object Integrity Proofs (FEP-8b32). It uses the `cryptography` library internally.
-
-#### Signing outbound requests
-
-```python
-import email.utils
-from apsig.draft import Signer
-
-method = "POST"
-url = "https://remote.example/users/alice/inbox"
-body = json.dumps(activity, ensure_ascii=False)
-body_bytes = body.encode("utf-8")  # CRITICAL: sign the exact bytes you send
-
-headers = {
-    "Content-Type": "application/activity+json",
-    "Date": email.utils.formatdate(usegmt=True),
-}
-
-signer = Signer(
-    headers=headers,
-    private_key=private_key,        # RSA private key (cryptography library object)
-    method=method,
-    url=url,
-    key_id=f"{actor_id}#main-key",  # Must match publicKey.id in your actor document
-    body=body_bytes,
-)
-signed_headers = signer.sign()
-# Use signed_headers for the actual HTTP request
-```
-
-#### Verifying inbound requests
-
-```python
-from apsig.draft import Verifier
-
-verifier = Verifier(
-    public_pem=public_key_pem,  # PEM-encoded public key string
-    method=request.method,
-    url=str(request.url),
-    headers=dict(request.headers),
-    body=await request.body(),   # Raw bytes, not parsed JSON
-)
-key_id = verifier.verify(raise_on_fail=True)
-```
+**Never implement signature construction or verification manually. Use `apsig`** (`apsig.draft.Signer` / `Verifier`). It implements draft-cavage-http-signatures-12 and uses the `cryptography` library internally. See `app/federation/signatures.py` for the project's implementation.
 
 #### Critical signature rules
 
