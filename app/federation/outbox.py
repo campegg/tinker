@@ -112,7 +112,15 @@ def build_note_object(note: Note, actor_uri: str) -> dict[str, Any]:
         "cc": [followers_url],
         "sensitive": False,
         "tag": tags,
-        "attachment": [],  # Media attachments wired in WP-14.
+        "attachment": [
+            {
+                "type": "Document",
+                "mediaType": a.mime_type,
+                "url": f"https://{domain}/media/{a.file_path}",
+                **({"name": a.alt_text} if a.alt_text else {}),
+            }
+            for a in note.attachments
+        ],
     }
 
     if note.in_reply_to is not None:

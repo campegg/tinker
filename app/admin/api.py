@@ -6,6 +6,9 @@ All state-changing endpoints (POST, PATCH, DELETE) require a valid
 
 Endpoint groups:
 
+- **CSRF** (``/admin/api/csrf``): current session CSRF token.
+- **Timeline** (``/admin/api/timeline``): merged own notes and received
+  activities, with cursor-based pagination and polling support.
 - **Notes** (``/admin/api/notes``): create, edit, delete.
 - **Media** (``/admin/api/media``): upload image attachments.
 """
@@ -14,11 +17,13 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from quart import Blueprint, Response, current_app, g, request
 
-from app.admin.auth import require_auth, validate_csrf
+from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.outbox import (
     build_create_activity,
@@ -27,9 +32,14 @@ from app.federation.outbox import (
 )
 from app.media import ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, process_image, save_upload
 from app.models.media_attachment import MediaAttachment
+from app.repositories.like import LikeRepository
 from app.repositories.media_attachment import MediaAttachmentRepository
+from app.repositories.note import NoteRepository
+from app.repositories.remote_actor import RemoteActorRepository
+from app.repositories.timeline_item import TimelineItemRepository
 from app.services.keypair import KeypairService
 from app.services.note import NoteService
+from app.services.settings import SettingsService
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,6 +97,202 @@ async def _get_delivery_context() -> tuple[str, str, str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _to_ap_ts(dt: datetime) -> str:
+    """Format a datetime as an ISO 8601 UTC string ending in ``Z``.
+
+    Args:
+        dt: A datetime (naive or timezone-aware).
+
+    Returns:
+        An ISO 8601 string such as ``"2026-03-21T10:00:00Z"``.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _derive_handle(actor_uri: str) -> str:
+    """Derive a ``@user@domain`` handle from an ActivityPub actor URI.
+
+    Parses Mastodon-style URIs (``/users/alice``, ``/u/alice``, ``/@alice``)
+    to produce a Fediverse handle. Falls back gracefully for non-standard
+    URI patterns.
+
+    Args:
+        actor_uri: The canonical ActivityPub URI of the remote actor.
+
+    Returns:
+        A handle string such as ``"@alice@mastodon.social"``.
+    """
+    parsed = urlparse(actor_uri)
+    domain = parsed.netloc
+    parts = [p for p in parsed.path.split("/") if p and p not in ("users", "u")]
+    username = parts[-1].lstrip("@") if parts else "unknown"
+    return f"@{username}@{domain}"
+
+
+# ---------------------------------------------------------------------------
+# CSRF
+# ---------------------------------------------------------------------------
+
+
+@api.route("/csrf", methods=["GET"])
+@require_auth
+async def get_csrf_token() -> Response:
+    """Return the current session CSRF token for use by Web Components.
+
+    Web Components need the CSRF token to include in the ``X-CSRF-Token``
+    header on state-changing requests. The token is already embedded in
+    ``window.__TINKER__.csrf`` by the HTML shell, but this endpoint is
+    available as a fallback for components that need to refresh it.
+
+    Returns:
+        ``200`` with ``{"csrf_token": "..."}``
+    """
+    token = get_or_create_csrf_token()
+    return _json_response({"csrf_token": token})
+
+
+# ---------------------------------------------------------------------------
+# Timeline
+# ---------------------------------------------------------------------------
+
+_PAGE_SIZE = 20
+
+
+@api.route("/timeline", methods=["GET"])
+@require_auth
+async def get_timeline() -> Response:
+    """Return a merged, reverse-chronological timeline of own notes and received activities.
+
+    Supports cursor-based pagination (``before`` parameter) and polling
+    for new items (``since`` parameter). The two modes are mutually
+    exclusive — if both are provided, ``since`` takes precedence.
+
+    Query parameters:
+
+    - ``since`` (ISO 8601, optional): Return only items newer than this
+      timestamp. Used by ``<timeline-view>`` for polling.
+    - ``before`` (ISO 8601, optional): Return only items older than this
+      timestamp. Used for "Load more" pagination.
+
+    Returns:
+        ``200`` with ``{"data": [...], "cursor": "...", "has_more": bool}``.
+        ``400`` if a timestamp parameter is malformed.
+    """
+    db: AsyncSession = g.db_session
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    username: str = current_app.config["TINKER_USERNAME"]
+    actor_uri = f"https://{domain}/{username}"
+    actor_handle = f"@{username}@{domain}"
+
+    since_str = request.args.get("since")
+    before_str = request.args.get("before")
+    since_dt: datetime | None = None
+    before_dt: datetime | None = None
+
+    if since_str:
+        try:
+            since_dt = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
+        except ValueError:
+            return _json_response({"error": "Invalid 'since' timestamp."}, status=400)
+    elif before_str:
+        try:
+            before_dt = datetime.fromisoformat(before_str.replace("Z", "+00:00"))
+        except ValueError:
+            return _json_response({"error": "Invalid 'before' timestamp."}, status=400)
+
+    note_repo = NoteRepository(db)
+    timeline_repo = TimelineItemRepository(db)
+    like_repo = LikeRepository(db)
+    actor_repo = RemoteActorRepository(db)
+    settings_svc = SettingsService(db)
+
+    fetch_limit = _PAGE_SIZE * 2  # over-fetch so merge has enough material
+
+    if since_dt is not None:
+        notes = list(await note_repo.get_since_dt(since_dt, fetch_limit))
+        tl_items = list(await timeline_repo.get_since_dt(since_dt, fetch_limit))
+    elif before_dt is not None:
+        notes = list(await note_repo.get_before_dt(before_dt, fetch_limit))
+        tl_items = list(await timeline_repo.get_before_dt(before_dt, fetch_limit))
+    else:
+        notes = list(await note_repo.get_recent(fetch_limit))
+        tl_items = list(await timeline_repo.get_recent(fetch_limit))
+
+    liked_uris = await like_repo.get_liked_uris_by_actor(actor_uri)
+    display_name = await settings_svc.get_display_name() or username
+    raw_avatar = await settings_svc.get_avatar()
+    avatar_url = f"/media/{raw_avatar}" if raw_avatar else ""
+
+    # Batch-fetch cached actor data for timeline items to get handles.
+    actor_uris = list({item.actor_uri for item in tl_items})
+    cached_actors = await actor_repo.get_by_uris(actor_uris)
+
+    unified: list[dict[str, Any]] = []
+
+    for note in notes:
+        media_url: str | None = None
+        if note.attachments:
+            media_url = f"/media/{note.attachments[0].file_path}"
+        unified.append(
+            {
+                "id": str(note.id),
+                "type": "own",
+                "post_id": note.ap_id,
+                "author_name": display_name,
+                "author_handle": actor_handle,
+                "author_avatar": avatar_url,
+                "published": _to_ap_ts(note.published_at),
+                "body_html": note.body_html,
+                "media_url": media_url,
+                "liked": False,
+                "reposted": False,
+                "own": True,
+                "internal_id": str(note.id),
+            }
+        )
+
+    for item in tl_items:
+        cached = cached_actors.get(item.actor_uri)
+        handle = cached.handle if cached and cached.handle else _derive_handle(item.actor_uri)
+        avatar = item.actor_avatar_url or ""
+        name = item.actor_name or item.actor_uri
+        uri = item.original_object_uri or ""
+        is_liked = uri in liked_uris if uri else False
+        unified.append(
+            {
+                "id": str(item.id),
+                "type": item.activity_type.lower(),
+                "post_id": uri,
+                "author_name": name,
+                "author_handle": handle,
+                "author_avatar": avatar,
+                "published": _to_ap_ts(item.received_at),
+                "body_html": item.content_html or "",
+                "media_url": None,
+                "liked": is_liked,
+                "reposted": False,
+                "own": False,
+                "internal_id": None,
+            }
+        )
+
+    # Sort by published timestamp descending; string ISO 8601 sorts correctly.
+    unified.sort(key=lambda x: x["published"], reverse=True)
+
+    has_more = len(unified) > _PAGE_SIZE
+    page = unified[:_PAGE_SIZE]
+    cursor = page[-1]["published"] if page else None
+
+    return _json_response({"data": page, "cursor": cursor, "has_more": has_more})
+
+
+# ---------------------------------------------------------------------------
 # Notes
 # ---------------------------------------------------------------------------
 
@@ -100,6 +306,8 @@ async def create_note() -> Response:
 
     - ``body`` (str, required): Markdown source of the note.
     - ``in_reply_to`` (str, optional): AP URI of the note being replied to.
+    - ``attachment_ids`` (list[str], optional): UUIDs of previously uploaded
+      :class:`~app.models.media_attachment.MediaAttachment` records to attach.
 
     Returns:
         ``201 Created`` with the note's ``id`` and ``ap_id`` on success,
@@ -116,16 +324,35 @@ async def create_note() -> Response:
     if in_reply_to is not None and not isinstance(in_reply_to, str):
         return _json_response({"error": "Field 'in_reply_to' must be a string."}, status=400)
 
-    session: AsyncSession = g.db_session
+    attachment_ids: list[str] = payload.get("attachment_ids") or []
+    if not isinstance(attachment_ids, list):
+        return _json_response({"error": "Field 'attachment_ids' must be a list."}, status=400)
+
+    db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
     actor_uri = f"https://{domain}/{username}"
 
-    note_svc = NoteService(session, domain, username)
+    note_svc = NoteService(db, domain, username)
     note = await note_svc.create(payload["body"].strip(), in_reply_to=in_reply_to)
+
+    # Link any uploaded attachments to the newly created note.
+    if attachment_ids:
+        attachment_repo = MediaAttachmentRepository(db)
+        for aid_str in attachment_ids:
+            try:
+                aid = uuid.UUID(aid_str)
+            except ValueError:
+                continue
+            attachment = await attachment_repo.get_by_id(aid)
+            if attachment is not None and attachment.note_id is None:
+                attachment.note_id = note.id
+        await db.commit()
+        # Reload note so attachments relationship is populated.
+        await db.refresh(note)
 
     activity = build_create_activity(note, actor_uri)
 
-    delivery_svc = DeliveryService(session)
+    delivery_svc = DeliveryService(db)
     items = await delivery_svc.fan_out(activity)
 
     session_factory = current_app.config["DB_SESSION_FACTORY"]
