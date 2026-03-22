@@ -240,27 +240,21 @@ Image handling for note attachments and avatar uploads.
 
 ---
 
-## WP-13: Admin Timeline
+## WP-13: Admin Timeline ✅
 
 The primary admin view — static HTML shell with Web Components fetching from a JSON API.
 
-- [ ] **Base admin JSON API patterns:** define auth-protected JSON endpoints with consistent response envelope (e.g., `{ "data": [...], "cursor": ... }`)
-- [ ] **Base Web Component patterns:** establish a base component class or shared utilities (authenticated `fetch` wrapper, relative-time formatting, error handling); establish the shared modal event pattern — child components dispatch `show-actor-profile` DOM event with actor URI payload, single `<actor-profile-modal>` instance on each admin shell listens on `document` (§5.6)
-- [ ] **Foundational leaf components** (build before any composite or view-level component — used across multiple views):
-  - `<actor-identity>`: avatar + display name + handle grouping; `size` attribute (`sm` / `md` / `lg`); used in every component that displays an actor
-  - `<follow-button>`: Follow / Unfollow pill toggle; `handle` and `followed` attributes; dispatches `follow` / `unfollow` custom events and calls the follow/unfollow JSON API
-  - `<actor-banner>`: banner image with avatar anchored 24 px from the bottom-left; `mode` attribute (`static` for display-only contexts, `editable` for the profile edit view where clicking either image opens a file picker to replace it)
-- [ ] `<nav-bar>` Web Component: renders the admin navigation (Posts, Profile, Notifications, Likes, Following, Followers, search icon); `active` attribute highlights the current view; includes `<notification-badge>` as a child (built in WP-16 — renders empty until then); present in every admin HTML shell
-- [ ] Timeline JSON API endpoint (admin-protected): return timeline data as JSON — includes `TimelineItem` records and own notes, with like/boost state per item
-- [ ] `<timeline-view>` Web Component: fetches timeline JSON and renders the list of items
-- [ ] `<status-item>` Web Component: renders a single post — author avatar (via `<actor-identity>`), relative timestamp, rendered content, media, boost attribution (§5.2); `own` boolean attribute shows Edit and Delete controls on own posts; used in the timeline, likes, and profile views
-- [ ] Like/boost state indicators on each `<status-item>`
-- [ ] Edit/Delete buttons on own posts within `<status-item>`
-- [ ] Polling: `<timeline-view>` polls the JSON endpoint for new items since the latest known ID/timestamp, prepends to DOM
-- [ ] "Load more" cursor-based pagination at bottom of `<timeline-view>`
-- [ ] `<compose-box>` Web Component at top (text-only initially — media wired in WP-14)
-- [ ] Static HTML shell at `static/admin/timeline.html` that loads the Web Components
-- [ ] Tests for timeline JSON API endpoint (auth, response format, filtering), polling (new-since), pagination
+- [x] **Base admin JSON API patterns:** auth-protected JSON endpoints with consistent `{ "data": [...], "cursor": ..., "has_more": bool }` envelope; `GET /admin/api/csrf` for CSRF token
+- [x] **Foundational leaf components:**
+  - `<actor-identity>`: avatar + display name + handle grouping; `size` attribute (`sm` / `md` / `lg`)
+  - `<nav-bar>`: admin navigation (Home, Profile, Notifications, Likes, Following, Followers, search icon); `active` attribute; dispatches `show-search-modal` event; `<notification-badge>` slot renders empty until WP-16
+- [x] Timeline JSON API endpoint (`GET /admin/api/timeline`): merged own notes + `TimelineItem` records, with liked state per item; `since` / `before` cursor params; 20-item pages
+- [x] `<timeline-view>` Web Component: fetches timeline, 30 s poll for new items, deduplication, "Load more" cursor pagination
+- [x] `<status-item>` Web Component: avatar, relative timestamp, rendered HTML content, optional media, like/repost/reply/edit/delete action buttons; `own` attribute enables edit and delete controls; inline edit and reply forms
+- [x] `<compose-box>` Web Component: textarea, Ctrl/Cmd+Enter shortcut, POST to notes JSON API, fires `post-submitted`; image attachment UI (file picker, preview strip) wired to media upload API
+- [x] Static HTML shell at `static/admin/timeline.html` injects `window.__TINKER__.csrf`
+- [x] Admin CSS: `.admin-page`, `.admin-nav`, `.compose-box`, `.status-item`, `.actor-identity`, `.timeline-view__*` with logical properties and CSS custom properties throughout
+- [x] Tests for timeline JSON API: auth required, CSRF endpoint, response shape, item fields, own notes in timeline (`own: true`, `internal_id`), `since` / `before` pagination, invalid timestamp → 400
 
 **Produces:** Working admin home view with real-time-ish timeline. JSON API endpoints and Web Component patterns established for reuse by other admin views.
 
@@ -268,15 +262,15 @@ The primary admin view — static HTML shell with Web Components fetching from a
 
 ---
 
-## WP-14: Admin Compose + Media Attachment
+## WP-14: Admin Compose + Media Attachment ✅
 
 Full compose flow including image attachments. The `<compose-box>` component is defined in WP-13; this WP wires in media support.
 
-- [ ] Wire `<compose-box>` component to note creation (WP-08) + delivery (WP-09) via JSON API
-- [ ] Image attachment: upload via `fetch()` + `FormData`, show client-side preview in the `<compose-box>`
-- [ ] Attach MediaAttachment records to notes
-- [ ] Include attachments in outgoing `Create{Note}` activity as AP `attachment` objects
-- [ ] Tests for compose → publish → federate flow with and without images
+- [x] Wire `<compose-box>` component to note creation (WP-08) + delivery (WP-09) via `POST /admin/api/notes`
+- [x] Image attachment: upload via `fetch()` + `FormData` to `POST /admin/api/media`, show client-side object URL preview immediately, replace with server URL on success
+- [x] Attach MediaAttachment records to notes via `attachment_ids` field in create-note request
+- [x] Include attachments in outgoing `Create{Note}` activity as AP `attachment` objects (Document type with `mediaType` and `url`)
+- [x] Tests: upload → compose with `attachment_ids` → 201, timeline item shows `media_url`, invalid attachment IDs silently skipped, upload without note association returns `id` + `url`
 
 **Produces:** Can compose and publish notes with image attachments from the admin.
 

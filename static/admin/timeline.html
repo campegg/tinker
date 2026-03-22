@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Home — Tinker</title>
+        <link rel="stylesheet" href="/assets/css/styles.css" />
+    </head>
+    <body class="admin-page">
+        <script>
+            window.__TINKER__ = { csrf: "{{csrf_token}}" };
+        </script>
+
+        <nav-bar active="timeline"></nav-bar>
+
+        <main class="admin-content">
+            <compose-box></compose-box>
+            <timeline-view></timeline-view>
+        </main>
+
+        <script type="module" src="/assets/js/components/actor-identity.js"></script>
+        <script type="module" src="/assets/js/components/nav-bar.js"></script>
+        <script type="module" src="/assets/js/components/status-item.js"></script>
+        <script type="module" src="/assets/js/components/compose-box.js"></script>
+        <script type="module" src="/assets/js/components/timeline-view.js"></script>
+    </body>
+</html>

@@ -338,13 +338,9 @@ Built after the leaf components they depend on.
 | Attribute | Type | Description |
 |---|---|---|
 | `active` | string | Name of the currently active view (e.g. `timeline`, `notifications`) |
-| `user-name` | string | Local user's display name (injected server-side) |
-| `user-handle` | string | Local user's full handle (injected server-side) |
-| `user-avatar` | string | Local user's avatar URL (injected server-side) |
 
 Internal state: none beyond the attribute values.
 Contains `<notification-badge>` as a child element; the badge manages its own state.
-Passes `user-name`, `user-handle`, and `user-avatar` into an internal `<actor-identity>` — no API call required.
 
 ---
 
