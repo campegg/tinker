@@ -522,8 +522,11 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 ### CSS
 
 - Use **native CSS nesting** throughout — selectors, pseudo-classes, pseudo-elements, and media queries should be nested inside their parent rule rather than written as separate flat rules.
+- **BEM blocks are a single nested rule.** All element (`__`) and modifier (`--`) selectors for a BEM block belong nested inside that block's rule, not written as separate flat selectors. A component's entire style surface should be readable as one coherent block.
 - Use **logical properties** (`inline-size`, `block-size`, `padding-inline`, `margin-block-end`, `text-align: start/end`, etc.) in preference to physical equivalents (`width`, `height`, `padding-left`, `margin-bottom`, `text-align: left/right`, etc.).
 - Use `::before` / `::after` (double colon) for pseudo-elements.
+- **Custom elements need explicit `display`**. Browsers treat unknown/custom elements as `display: inline` by default. Any Web Component that participates in block, flex, or grid layout must have an explicit `display` value set in the stylesheet (typically `display: block`). Without this, percentage-based sizes inside the element resolve against the element's shrunken content width rather than the viewport, causing silent layout breakage.
+- **Never suppress focus rings globally.** Do not set `outline: 0` or `outline: none` on broad selectors such as `input:focus` or `*:focus` without providing a visible replacement. Removing focus indicators globally is a WCAG 2.4.7 violation. Components that require custom focus treatment should style it explicitly on their own focused selectors; everything else should keep the browser default.
 
 ### Admin UI
 
