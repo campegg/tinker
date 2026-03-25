@@ -312,7 +312,7 @@ Real-time notification push to the admin.
 
 ---
 
-## WP-17: Notifications View
+## WP-17: Notifications View ✅
 
 Persistent, browsable notification history — static HTML shell with Web Components fetching from a JSON API.
 

@@ -73,6 +73,21 @@ class FollowingRepository(BaseRepository[Following]):
         )
         return result.scalars().all()
 
+    async def get_followed_actor_uris(self) -> set[str]:
+        """Return the set of actor URIs for all active (pending or accepted) follows.
+
+        Used to batch-check ``is_following`` when rendering notification lists,
+        without making one query per notification.
+
+        Returns:
+            A set of actor URI strings for all following records with status
+            ``"pending"`` or ``"accepted"``.
+        """
+        result = await self._session.execute(
+            select(Following.actor_uri).where(Following.status.in_(("pending", "accepted")))
+        )
+        return set(result.scalars().all())
+
     async def count_accepted(self) -> int:
         """Count the total number of accepted following relationships.
 

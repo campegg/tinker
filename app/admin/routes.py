@@ -121,3 +121,20 @@ async def timeline() -> Any:
     display_name, handle, avatar_url, csrf_token = await _shell_context()
     html = _inject(html, display_name, handle, avatar_url, csrf_token)
     return Response(response=html, status=200, content_type="text/html; charset=utf-8")
+
+
+@admin.route("/notifications")
+@require_auth
+async def notifications() -> Any:
+    """Serve the notifications admin view.
+
+    Loads ``static/admin/notifications.html``, injects user-specific values
+    (display name, handle, avatar, CSRF token), and returns it as HTML.
+
+    Returns:
+        An HTML response with the notifications shell page.
+    """
+    html = _load_shell("notifications.html")
+    display_name, handle, avatar_url, csrf_token = await _shell_context()
+    html = _inject(html, display_name, handle, avatar_url, csrf_token)
+    return Response(response=html, status=200, content_type="text/html; charset=utf-8")

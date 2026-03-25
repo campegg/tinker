@@ -13,6 +13,7 @@ from sqlalchemy import func, select, update
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +56,25 @@ class NotificationRepository(BaseRepository[Notification]):
             .order_by(Notification.created_at.desc())
             .limit(limit)
             .offset(offset)
+        )
+        return result.scalars().all()
+
+    async def get_before_dt(self, before: datetime, limit: int) -> Sequence[Notification]:
+        """Fetch notifications created before a given timestamp, for cursor pagination.
+
+        Args:
+            before: The exclusive upper bound on ``created_at``.
+            limit: Maximum number of notifications to return.
+
+        Returns:
+            A sequence of notifications with ``created_at < before``,
+            ordered from newest to oldest.
+        """
+        result = await self._session.execute(
+            select(Notification)
+            .where(Notification.created_at < before)
+            .order_by(Notification.created_at.desc())
+            .limit(limit)
         )
         return result.scalars().all()
 

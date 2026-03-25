@@ -15,8 +15,12 @@ Endpoint groups:
   remote posts; generates and delivers Like/Undo{Like} activities.
 - **Boosts** (``/admin/api/boosts``, ``/admin/api/unboosts``): boost/unboost
   remote posts; generates and delivers Announce/Undo{Announce} activities.
-- **Notifications** (``/admin/api/notifications/unread-count``): unread
-  notification count.
+- **Notifications** (``/admin/api/notifications``,
+  ``/admin/api/notifications/unread-count``,
+  ``/admin/api/notifications/mark-all-read``): notification list,
+  unread count, and bulk mark-as-read.
+- **Follow/Unfollow** (``/admin/api/follow``, ``/admin/api/unfollow``):
+  send Follow and Undo{Follow} activities to remote actors.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ from quart import Blueprint, Response, current_app, g, request
 
 from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
 from app.federation.delivery import DeliveryService, dispatch_new_items
+from app.federation.follow import send_follow, send_unfollow
 from app.federation.outbox import (
     build_announce_activity,
     build_create_activity,
@@ -115,6 +120,22 @@ async def _get_delivery_context() -> tuple[str, str, str, str]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _parse_actor_uri(payload: Any) -> str | None:
+    """Extract and validate the ``actor_uri`` field from a JSON request payload.
+
+    Args:
+        payload: The parsed JSON payload (may be ``None`` or non-dict).
+
+    Returns:
+        The stripped ``actor_uri`` string, or ``None`` if the field is
+        missing, not a string, or blank.
+    """
+    if not payload or not isinstance(payload.get("actor_uri"), str):
+        return None
+    stripped = payload["actor_uri"].strip()
+    return stripped if stripped else None
 
 
 def _parse_post_id(payload: Any) -> str | None:
@@ -889,6 +910,82 @@ async def unboost_post() -> Response:
 # ---------------------------------------------------------------------------
 
 
+@api.route("/notifications", methods=["GET"])
+@require_auth
+async def get_notifications() -> Response:
+    """Return a paginated list of notifications for the admin.
+
+    Supports cursor-based pagination via the ``before`` query parameter.
+    For each notification the response includes a cached actor avatar URL
+    and an ``is_following`` boolean indicating whether the local user
+    currently follows (or has a pending follow for) that actor.
+
+    Query parameters:
+
+    - ``before`` (ISO 8601, optional): Return only notifications created
+      before this timestamp.
+
+    Returns:
+        ``200`` with ``{"data": [...], "cursor": "...", "has_more": bool}``.
+        ``400`` if the ``before`` timestamp is malformed.
+    """
+    db: AsyncSession = g.db_session
+
+    before_str = request.args.get("before")
+    before_dt: datetime | None = None
+    if before_str:
+        try:
+            before_dt = datetime.fromisoformat(before_str.replace("Z", "+00:00"))
+        except ValueError:
+            return _json_response({"error": "Invalid 'before' timestamp."}, status=400)
+
+    notif_repo = NotificationRepository(db)
+    actor_repo = RemoteActorRepository(db)
+    following_repo = FollowingRepository(db)
+
+    fetch_limit = _PAGE_SIZE + 1  # over-fetch by 1 to detect has_more
+
+    if before_dt is not None:
+        rows = list(await notif_repo.get_before_dt(before_dt, fetch_limit))
+    else:
+        rows = list(await notif_repo.get_recent(fetch_limit))
+
+    has_more = len(rows) > _PAGE_SIZE
+    page = rows[:_PAGE_SIZE]
+
+    # Batch-fetch cached actor data to avoid N+1 avatar lookups.
+    actor_uris = list({n.actor_uri for n in page})
+    cached_actors = await actor_repo.get_by_uris(actor_uris)
+
+    # Build the set of actor URIs the local user follows (pending + accepted).
+    followed_uris = await following_repo.get_followed_actor_uris()
+
+    data: list[dict[str, Any]] = []
+    for n in page:
+        cached = cached_actors.get(n.actor_uri)
+        handle = (
+            cached.handle if cached and cached.handle else _derive_handle(n.actor_uri)
+        )
+        avatar = (cached.avatar_url or "") if cached else ""
+        data.append(
+            {
+                "id": str(n.id),
+                "type": n.type,
+                "actor_uri": n.actor_uri,
+                "actor_name": n.actor_name or "",
+                "actor_handle": handle,
+                "actor_avatar": avatar,
+                "object_uri": n.object_uri or "",
+                "content": n.content or "",
+                "created_at": _to_ap_ts(n.created_at),
+                "is_following": n.actor_uri in followed_uris,
+            }
+        )
+
+    cursor = data[-1]["created_at"] if data else None
+    return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
+
+
 @api.route("/notifications/unread-count", methods=["GET"])
 @require_auth
 async def get_unread_notification_count() -> Response:
@@ -901,3 +998,104 @@ async def get_unread_notification_count() -> Response:
     db: AsyncSession = g.db_session
     count = await NotificationRepository(db).get_unread_count()
     return _json_response({"count": count})
+
+
+@api.route("/notifications/mark-all-read", methods=["POST"])
+@require_auth
+async def mark_all_notifications_read() -> Response:
+    """Mark all unread notifications as read.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}``.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+    db: AsyncSession = g.db_session
+    await NotificationRepository(db).mark_all_read()
+    await db.commit()
+    return _json_response({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Follow / Unfollow
+# ---------------------------------------------------------------------------
+
+
+@api.route("/follow", methods=["POST"])
+@require_auth
+async def follow_actor() -> Response:
+    """Send a ``Follow`` activity to a remote actor's inbox.
+
+    Request body (JSON):
+
+    - ``actor_uri`` (str, required): The AP URI of the actor to follow.
+
+    The operation is idempotent: if a follow is already pending or
+    accepted, the endpoint returns ``200`` immediately.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success.
+        ``400`` on missing/invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    target_uri = _parse_actor_uri(payload)
+    if target_uri is None:
+        return _json_response({"error": "Field 'actor_uri' is required."}, status=400)
+
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+
+    await send_follow(
+        target_uri,
+        session=db,
+        session_factory=current_app.config["DB_SESSION_FACTORY"],
+        private_key_pem=private_key_pem,
+        key_id=key_id,
+        semaphore=current_app.config["DELIVERY_SEMAPHORE"],
+        domain=domain,
+        username=username,
+    )
+    return _json_response({"status": "ok"})
+
+
+@api.route("/unfollow", methods=["POST"])
+@require_auth
+async def unfollow_actor() -> Response:
+    """Send an ``Undo{Follow}`` activity to retract a follow.
+
+    Request body (JSON):
+
+    - ``actor_uri`` (str, required): The AP URI of the actor to unfollow.
+
+    The operation is idempotent: if no follow record exists, the endpoint
+    returns ``200`` immediately.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success.
+        ``400`` on missing/invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    target_uri = _parse_actor_uri(payload)
+    if target_uri is None:
+        return _json_response({"error": "Field 'actor_uri' is required."}, status=400)
+
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+
+    await send_unfollow(
+        target_uri,
+        session=db,
+        session_factory=current_app.config["DB_SESSION_FACTORY"],
+        private_key_pem=private_key_pem,
+        key_id=key_id,
+        semaphore=current_app.config["DELIVERY_SEMAPHORE"],
+        domain=domain,
+        username=username,
+    )
+    return _json_response({"status": "ok"})
