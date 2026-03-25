@@ -167,9 +167,11 @@ def create_app() -> Quart:
     from app.admin.api import api as api_bp
     from app.admin.auth import auth
     from app.admin.routes import admin as admin_bp
+    from app.admin.sse import sse_bp
 
     app.register_blueprint(auth)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(sse_bp)
 
     return app

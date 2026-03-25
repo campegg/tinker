@@ -15,6 +15,8 @@ Endpoint groups:
   remote posts; generates and delivers Like/Undo{Like} activities.
 - **Boosts** (``/admin/api/boosts``, ``/admin/api/unboosts``): boost/unboost
   remote posts; generates and delivers Announce/Undo{Announce} activities.
+- **Notifications** (``/admin/api/notifications/unread-count``): unread
+  notification count.
 """
 
 from __future__ import annotations
@@ -48,6 +50,7 @@ from app.repositories.following import FollowingRepository
 from app.repositories.like import LikeRepository
 from app.repositories.media_attachment import MediaAttachmentRepository
 from app.repositories.note import NoteRepository
+from app.repositories.notification import NotificationRepository
 from app.repositories.remote_actor import RemoteActorRepository
 from app.repositories.timeline_item import TimelineItemRepository
 from app.services.keypair import KeypairService
@@ -879,3 +882,22 @@ async def unboost_post() -> Response:
     )
 
     return _json_response({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+@api.route("/notifications/unread-count", methods=["GET"])
+@require_auth
+async def get_unread_notification_count() -> Response:
+    """Return the number of unread notifications.
+
+    Returns:
+        ``200`` with ``{"count": n}`` where ``n`` is the total number of
+        notifications that have not yet been marked as read.
+    """
+    db: AsyncSession = g.db_session
+    count = await NotificationRepository(db).get_unread_count()
+    return _json_response({"count": count})

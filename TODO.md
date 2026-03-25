@@ -295,16 +295,16 @@ Like, reply, boost, edit, delete — all from the timeline via Web Components an
 
 ---
 
-## WP-16: SSE Notifications
+## WP-16: SSE Notifications ✅
 
 Real-time notification push to the admin.
 
-- [ ] `asyncio.Queue` bridge: inbox pipeline (WP-10) emits notification events to the queue
-- [ ] SSE endpoint (admin-protected): reads from queue, streams events to client (§5.3)
-- [ ] Unread count JSON API endpoint (`GET /admin/api/notifications/unread-count`): returns count of `read = false` rows
-- [ ] `<notification-badge>` Web Component: fetches unread count on init, increments on each SSE event, resets to zero on `notifications-read` DOM event (§5.3)
-- [ ] Auto-reconnect on disconnect (handled within `<notification-badge>`)
-- [ ] Tests for SSE event emission, delivery, reconnection, unread count endpoint
+- [x] `asyncio.Queue` bridge: inbox pipeline (WP-10) emits notification events to the queue
+- [x] SSE endpoint (admin-protected): reads from queue, streams events to client (§5.3)
+- [x] Unread count JSON API endpoint (`GET /admin/api/notifications/unread-count`): returns count of `read = false` rows
+- [x] `<notification-badge>` Web Component: fetches unread count on init, increments on each SSE event, resets to zero on `notifications-read` DOM event (§5.3)
+- [x] Auto-reconnect on disconnect (handled within `<notification-badge>`)
+- [x] Tests for SSE event emission, delivery, reconnection, unread count endpoint
 
 **Produces:** Admin sees real-time notification indicators.
 

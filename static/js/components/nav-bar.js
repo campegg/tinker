@@ -12,7 +12,6 @@
  */
 class NavBar extends HTMLElement {
     static observedAttributes = ["active"];
-</thinking>
 
     connectedCallback() {
         this._render();
