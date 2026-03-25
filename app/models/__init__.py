@@ -6,6 +6,7 @@ rather than from individual modules.
 """
 
 from app.models.base import Base, UUIDModel
+from app.models.boost import Boost
 from app.models.delivery_queue import DeliveryQueue
 from app.models.follower import Follower
 from app.models.following import Following
@@ -20,6 +21,7 @@ from app.models.timeline_item import TimelineItem
 
 __all__ = [
     "Base",
+    "Boost",
     "DeliveryQueue",
     "Follower",
     "Following",

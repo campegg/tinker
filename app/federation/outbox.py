@@ -11,6 +11,7 @@ or database I/O. Delivery to remote inboxes is handled in WP-09.
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -191,6 +192,132 @@ def build_update_activity(note: Note, actor_uri: str) -> dict[str, Any]:
         "cc": [followers_url],
         "object": note_doc,
     }
+
+
+def build_like_activity(post_uri: str, actor_uri: str, activity_id: str) -> dict[str, Any]:
+    """Build a ``Like`` activity for a remote post.
+
+    Args:
+        post_uri: The AP URI of the post being liked.
+        actor_uri: The canonical AP actor URI of the local user.
+        activity_id: The unique AP URI to use as this activity's ``id``.
+
+    Returns:
+        A dictionary representing the ``Like`` activity.
+    """
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Like",
+        "actor": actor_uri,
+        "published": _to_ap_datetime(datetime.now(UTC)),
+        "object": post_uri,
+    }
+
+
+def build_undo_like_activity(
+    like_activity_id: str,
+    post_uri: str,
+    actor_uri: str,
+    activity_id: str,
+) -> dict[str, Any]:
+    """Build an ``Undo{Like}`` activity to retract a previously sent Like.
+
+    Args:
+        like_activity_id: The AP URI of the original ``Like`` activity.
+        post_uri: The AP URI of the post that was liked.
+        actor_uri: The canonical AP actor URI of the local user.
+        activity_id: The unique AP URI to use as this Undo activity's ``id``.
+
+    Returns:
+        A dictionary representing the ``Undo{Like}`` activity.
+    """
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Undo",
+        "actor": actor_uri,
+        "published": _to_ap_datetime(datetime.now(UTC)),
+        "object": {
+            "id": like_activity_id,
+            "type": "Like",
+            "actor": actor_uri,
+            "object": post_uri,
+        },
+    }
+
+
+def build_announce_activity(post_uri: str, actor_uri: str, activity_id: str) -> dict[str, Any]:
+    """Build an ``Announce`` activity to boost a remote post.
+
+    Args:
+        post_uri: The AP URI of the post being boosted.
+        actor_uri: The canonical AP actor URI of the local user.
+        activity_id: The unique AP URI to use as this activity's ``id``.
+
+    Returns:
+        A dictionary representing the ``Announce`` activity.
+    """
+    followers_url = f"{actor_uri}/followers"
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Announce",
+        "actor": actor_uri,
+        "published": _to_ap_datetime(datetime.now(UTC)),
+        "to": [AP_PUBLIC],
+        "cc": [followers_url],
+        "object": post_uri,
+    }
+
+
+def build_undo_announce_activity(
+    announce_activity_id: str,
+    post_uri: str,
+    actor_uri: str,
+    activity_id: str,
+) -> dict[str, Any]:
+    """Build an ``Undo{Announce}`` activity to retract a boost.
+
+    Args:
+        announce_activity_id: The AP URI of the original ``Announce`` activity.
+        post_uri: The AP URI of the post that was boosted.
+        actor_uri: The canonical AP actor URI of the local user.
+        activity_id: The unique AP URI to use as this Undo activity's ``id``.
+
+    Returns:
+        A dictionary representing the ``Undo{Announce}`` activity.
+    """
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Undo",
+        "actor": actor_uri,
+        "published": _to_ap_datetime(datetime.now(UTC)),
+        "object": {
+            "id": announce_activity_id,
+            "type": "Announce",
+            "actor": actor_uri,
+            "object": post_uri,
+        },
+    }
+
+
+def generate_activity_id(actor_uri: str, kind: str) -> str:
+    """Generate a unique activity URI for a transient outgoing activity.
+
+    Uses a UUID fragment to ensure uniqueness while keeping the URI
+    anchored to the local actor.
+
+    Args:
+        actor_uri: The canonical AP actor URI of the local user.
+        kind: A short label for the activity type (e.g. ``"like"``,
+            ``"boost"``). Used only to make the URI human-readable.
+
+    Returns:
+        A URI string suitable for use as an activity ``id``.
+    """
+    return f"{actor_uri}#{kind}-{uuid.uuid4().hex}"
 
 
 def build_delete_activity(note_ap_id: str, actor_uri: str) -> dict[str, Any]:

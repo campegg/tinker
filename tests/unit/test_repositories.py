@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
+from app.models.boost import Boost
 from app.models.delivery_queue import DeliveryQueue
 from app.models.follower import Follower
 from app.models.following import Following
@@ -14,6 +15,7 @@ from app.models.notification import Notification
 from app.models.remote_actor import RemoteActor
 from app.models.settings import Settings
 from app.models.timeline_item import TimelineItem
+from app.repositories.boost import BoostRepository
 from app.repositories.delivery_queue import DeliveryQueueRepository
 from app.repositories.follower import FollowerRepository
 from app.repositories.following import FollowingRepository
@@ -783,6 +785,99 @@ class TestLikeRepository:
         result = await repo.get_by_activity_uri(
             "https://remote.example.com/activities/like/missing"
         )
+
+        assert result is None
+
+    async def test_get_by_note_and_actor_returns_match(self, mock_session: AsyncMock) -> None:
+        repo = LikeRepository(mock_session)
+        mock_like = MagicMock(spec=Like)
+        mock_scalars = MagicMock()
+        mock_scalars.first = MagicMock(return_value=mock_like)
+        mock_result = MagicMock()
+        mock_result.scalars = MagicMock(return_value=mock_scalars)
+        mock_session.execute.return_value = mock_result
+
+        result = await repo.get_by_note_and_actor(
+            "https://remote.example.com/notes/1",
+            "https://example.com/users/alice",
+        )
+
+        mock_session.execute.assert_awaited_once()
+        assert result is mock_like
+
+    async def test_get_by_note_and_actor_returns_none_when_not_found(
+        self, mock_session: AsyncMock
+    ) -> None:
+        repo = LikeRepository(mock_session)
+
+        result = await repo.get_by_note_and_actor(
+            "https://remote.example.com/notes/missing",
+            "https://example.com/users/alice",
+        )
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# BoostRepository
+# ---------------------------------------------------------------------------
+
+
+class TestBoostRepository:
+    def test_constructor(self, mock_session: AsyncMock) -> None:
+        repo = BoostRepository(mock_session)
+        assert repo._session is mock_session
+        assert repo._model_class is Boost
+
+    async def test_get_by_note_and_actor_returns_match(self, mock_session: AsyncMock) -> None:
+        repo = BoostRepository(mock_session)
+        mock_boost = MagicMock(spec=Boost)
+        mock_scalars = MagicMock()
+        mock_scalars.first = MagicMock(return_value=mock_boost)
+        mock_result = MagicMock()
+        mock_result.scalars = MagicMock(return_value=mock_scalars)
+        mock_session.execute.return_value = mock_result
+
+        result = await repo.get_by_note_and_actor(
+            "https://remote.example.com/notes/1",
+            "https://example.com/users/alice",
+        )
+
+        mock_session.execute.assert_awaited_once()
+        assert result is mock_boost
+
+    async def test_get_by_note_and_actor_returns_none_when_not_found(
+        self, mock_session: AsyncMock
+    ) -> None:
+        repo = BoostRepository(mock_session)
+
+        result = await repo.get_by_note_and_actor(
+            "https://remote.example.com/notes/missing",
+            "https://example.com/users/alice",
+        )
+
+        assert result is None
+
+    async def test_get_by_activity_uri_returns_match(self, mock_session: AsyncMock) -> None:
+        repo = BoostRepository(mock_session)
+        mock_boost = MagicMock(spec=Boost)
+        mock_scalars = MagicMock()
+        mock_scalars.first = MagicMock(return_value=mock_boost)
+        mock_result = MagicMock()
+        mock_result.scalars = MagicMock(return_value=mock_scalars)
+        mock_session.execute.return_value = mock_result
+
+        result = await repo.get_by_activity_uri("https://example.com/users/alice#boost-abc123")
+
+        mock_session.execute.assert_awaited_once()
+        assert result is mock_boost
+
+    async def test_get_by_activity_uri_returns_none_when_not_found(
+        self, mock_session: AsyncMock
+    ) -> None:
+        repo = BoostRepository(mock_session)
+
+        result = await repo.get_by_activity_uri("https://example.com/users/alice#boost-missing")
 
         assert result is None
 

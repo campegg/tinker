@@ -11,6 +11,10 @@ Endpoint groups:
   activities, with cursor-based pagination and polling support.
 - **Notes** (``/admin/api/notes``): create, edit, delete.
 - **Media** (``/admin/api/media``): upload image attachments.
+- **Likes** (``/admin/api/likes``, ``/admin/api/unlikes``): like/unlike
+  remote posts; generates and delivers Like/Undo{Like} activities.
+- **Boosts** (``/admin/api/boosts``, ``/admin/api/unboosts``): boost/unboost
+  remote posts; generates and delivers Announce/Undo{Announce} activities.
 """
 
 from __future__ import annotations
@@ -26,12 +30,21 @@ from quart import Blueprint, Response, current_app, g, request
 from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.outbox import (
+    build_announce_activity,
     build_create_activity,
     build_delete_activity,
+    build_like_activity,
+    build_undo_announce_activity,
+    build_undo_like_activity,
     build_update_activity,
+    generate_activity_id,
 )
 from app.media import ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, process_image, save_upload
+from app.models.boost import Boost
+from app.models.like import Like
 from app.models.media_attachment import MediaAttachment
+from app.repositories.boost import BoostRepository
+from app.repositories.following import FollowingRepository
 from app.repositories.like import LikeRepository
 from app.repositories.media_attachment import MediaAttachmentRepository
 from app.repositories.note import NoteRepository
@@ -99,6 +112,57 @@ async def _get_delivery_context() -> tuple[str, str, str, str]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _parse_post_id(payload: Any) -> str | None:
+    """Extract and validate the ``post_id`` field from a JSON request payload.
+
+    Args:
+        payload: The parsed JSON payload (may be ``None`` or non-dict).
+
+    Returns:
+        The stripped ``post_id`` string, or ``None`` if the field is
+        missing, not a string, or blank.
+    """
+    if not payload or not isinstance(payload.get("post_id"), str):
+        return None
+    stripped = payload["post_id"].strip()
+    return stripped if stripped else None
+
+
+async def _find_inbox_for_post(post_id: str, db: AsyncSession) -> str | None:
+    """Look up the inbox URL for the author of a given AP post URI.
+
+    Tries, in order:
+    1. The ``TimelineItem`` table (which stores ``actor_uri`` per item)
+       to identify the author, then the ``RemoteActor`` cache for the inbox.
+    2. The ``Following`` table as a fallback — posts we interact with are
+       typically from actors we follow, so their inbox is stored there.
+
+    Args:
+        post_id: The ActivityPub URI of the post whose author's inbox is needed.
+        db: The current database session.
+
+    Returns:
+        The inbox URL string, or ``None`` if the author cannot be resolved.
+    """
+    timeline_repo = TimelineItemRepository(db)
+    item = await timeline_repo.get_by_object_uri(post_id)
+    actor_uri = item.actor_uri if item else None
+    if not actor_uri:
+        return None
+
+    actor_repo = RemoteActorRepository(db)
+    cached = await actor_repo.get_by_uri(actor_uri)
+    if cached and cached.inbox_url:
+        return cached.inbox_url
+
+    following_repo = FollowingRepository(db)
+    following = await following_repo.get_by_actor_uri(actor_uri)
+    if following:
+        return following.inbox_url
+
+    return None
 
 
 def _to_ap_ts(dt: datetime) -> str:
@@ -557,3 +621,261 @@ async def upload_media() -> Response:
         },
         status=201,
     )
+
+
+# ---------------------------------------------------------------------------
+# Likes
+# ---------------------------------------------------------------------------
+
+
+@api.route("/likes", methods=["POST"])
+@require_auth
+async def like_post() -> Response:
+    """Like a remote post and deliver a Like activity to the post author.
+
+    Request body (JSON):
+
+    - ``post_id`` (str, required): AP URI of the post to like.
+
+    The operation is idempotent: if the post is already liked, returns
+    ``200`` without creating a duplicate record or re-delivering.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success or if already liked.
+        ``400`` on missing/invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    post_id = _parse_post_id(payload)
+    if post_id is None:
+        return _json_response({"error": "Field 'post_id' is required."}, status=400)
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+    actor_uri = f"https://{domain}/{username}"
+
+    like_repo = LikeRepository(db)
+    if await like_repo.get_by_note_and_actor(post_id, actor_uri):
+        return _json_response({"status": "ok"})
+
+    activity_id = generate_activity_id(actor_uri, "like")
+    activity = build_like_activity(post_id, actor_uri, activity_id)
+
+    like = Like(note_uri=post_id, actor_uri=actor_uri, activity_uri=activity_id)
+    await like_repo.add(like)
+    await db.commit()
+
+    inbox_url = await _find_inbox_for_post(post_id, db)
+    if inbox_url:
+        delivery_svc = DeliveryService(db)
+        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
+        session_factory = current_app.config["DB_SESSION_FACTORY"]
+        semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+        dispatch_new_items(
+            [item],
+            session_factory=session_factory,
+            private_key_pem=private_key_pem,
+            key_id=key_id,
+            semaphore=semaphore,
+        )
+
+    return _json_response({"status": "ok"})
+
+
+@api.route("/unlikes", methods=["POST"])
+@require_auth
+async def unlike_post() -> Response:
+    """Unlike a previously liked post and deliver an Undo{Like} activity.
+
+    Request body (JSON):
+
+    - ``post_id`` (str, required): AP URI of the post to unlike.
+
+    The operation is idempotent: if the post is not currently liked,
+    returns ``200`` without error.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success or if not liked.
+        ``400`` on missing/invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    post_id = _parse_post_id(payload)
+    if post_id is None:
+        return _json_response({"error": "Field 'post_id' is required."}, status=400)
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+    actor_uri = f"https://{domain}/{username}"
+
+    like_repo = LikeRepository(db)
+    existing = await like_repo.get_by_note_and_actor(post_id, actor_uri)
+    if not existing:
+        return _json_response({"status": "ok"})
+
+    like_activity_id = existing.activity_uri or generate_activity_id(actor_uri, "like")
+    undo_id = generate_activity_id(actor_uri, "undo-like")
+    activity = build_undo_like_activity(like_activity_id, post_id, actor_uri, undo_id)
+
+    await like_repo.delete(existing)
+    await db.commit()
+
+    inbox_url = await _find_inbox_for_post(post_id, db)
+    if inbox_url:
+        delivery_svc = DeliveryService(db)
+        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
+        session_factory = current_app.config["DB_SESSION_FACTORY"]
+        semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+        dispatch_new_items(
+            [item],
+            session_factory=session_factory,
+            private_key_pem=private_key_pem,
+            key_id=key_id,
+            semaphore=semaphore,
+        )
+
+    return _json_response({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Boosts
+# ---------------------------------------------------------------------------
+
+
+@api.route("/boosts", methods=["POST"])
+@require_auth
+async def boost_post() -> Response:
+    """Boost a remote post and deliver an Announce activity.
+
+    Delivers the Announce activity to the post author's inbox and fans
+    out to all accepted followers.
+
+    Request body (JSON):
+
+    - ``post_id`` (str, required): AP URI of the post to boost.
+
+    The operation is idempotent: if the post is already boosted, returns
+    ``200`` without creating a duplicate record or re-delivering.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success or if already boosted.
+        ``400`` on missing/invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    post_id = _parse_post_id(payload)
+    if post_id is None:
+        return _json_response({"error": "Field 'post_id' is required."}, status=400)
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+    actor_uri = f"https://{domain}/{username}"
+
+    boost_repo = BoostRepository(db)
+    if await boost_repo.get_by_note_and_actor(post_id, actor_uri):
+        return _json_response({"status": "ok"})
+
+    activity_id = generate_activity_id(actor_uri, "boost")
+    activity = build_announce_activity(post_id, actor_uri, activity_id)
+
+    boost = Boost(note_uri=post_id, actor_uri=actor_uri, activity_uri=activity_id)
+    await boost_repo.add(boost)
+    await db.commit()
+
+    session_factory = current_app.config["DB_SESSION_FACTORY"]
+    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+    delivery_svc = DeliveryService(db)
+
+    inbox_url = await _find_inbox_for_post(post_id, db)
+    if inbox_url:
+        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
+        dispatch_new_items(
+            [item],
+            session_factory=session_factory,
+            private_key_pem=private_key_pem,
+            key_id=key_id,
+            semaphore=semaphore,
+        )
+
+    fan_out_items = await delivery_svc.fan_out(activity)
+    dispatch_new_items(
+        fan_out_items,
+        session_factory=session_factory,
+        private_key_pem=private_key_pem,
+        key_id=key_id,
+        semaphore=semaphore,
+    )
+
+    return _json_response({"status": "ok"})
+
+
+@api.route("/unboosts", methods=["POST"])
+@require_auth
+async def unboost_post() -> Response:
+    """Unboost a previously boosted post and deliver an Undo{Announce} activity.
+
+    Delivers the Undo to the post author's inbox and fans out to all
+    accepted followers.
+
+    Request body (JSON):
+
+    - ``post_id`` (str, required): AP URI of the post to unboost.
+
+    The operation is idempotent: if the post is not currently boosted,
+    returns ``200`` without error.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success or if not boosted.
+        ``400`` on missing/invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    post_id = _parse_post_id(payload)
+    if post_id is None:
+        return _json_response({"error": "Field 'post_id' is required."}, status=400)
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+    actor_uri = f"https://{domain}/{username}"
+
+    boost_repo = BoostRepository(db)
+    existing = await boost_repo.get_by_note_and_actor(post_id, actor_uri)
+    if not existing:
+        return _json_response({"status": "ok"})
+
+    announce_activity_id = existing.activity_uri or generate_activity_id(actor_uri, "boost")
+    undo_id = generate_activity_id(actor_uri, "undo-boost")
+    activity = build_undo_announce_activity(announce_activity_id, post_id, actor_uri, undo_id)
+
+    await boost_repo.delete(existing)
+    await db.commit()
+
+    session_factory = current_app.config["DB_SESSION_FACTORY"]
+    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+    delivery_svc = DeliveryService(db)
+
+    inbox_url = await _find_inbox_for_post(post_id, db)
+    if inbox_url:
+        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
+        dispatch_new_items(
+            [item],
+            session_factory=session_factory,
+            private_key_pem=private_key_pem,
+            key_id=key_id,
+            semaphore=semaphore,
+        )
+
+    fan_out_items = await delivery_svc.fan_out(activity)
+    dispatch_new_items(
+        fan_out_items,
+        session_factory=session_factory,
+        private_key_pem=private_key_pem,
+        key_id=key_id,
+        semaphore=semaphore,
+    )
+
+    return _json_response({"status": "ok"})

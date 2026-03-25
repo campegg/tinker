@@ -38,6 +38,25 @@ class LikeRepository(BaseRepository[Like]):
         """
         super().__init__(session, Like)
 
+    async def get_by_note_and_actor(self, note_uri: str, actor_uri: str) -> Like | None:
+        """Fetch a like by note URI and actor URI.
+
+        Used for idempotency checks: returns the existing like record if
+        the given actor has already liked this note.
+
+        Args:
+            note_uri: The ActivityPub URI of the liked note.
+            actor_uri: The ActivityPub URI of the actor who liked.
+
+        Returns:
+            The matching like, or ``None`` if no like exists for the
+            given note and actor combination.
+        """
+        result = await self._session.execute(
+            select(Like).where(Like.note_uri == note_uri, Like.actor_uri == actor_uri)
+        )
+        return result.scalars().first()
+
     async def get_by_note_uri(self, note_uri: str) -> Like | None:
         """Fetch a like by the URI of the note that was liked.
 

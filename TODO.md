@@ -278,16 +278,16 @@ Full compose flow including image attachments. The `<compose-box>` component is 
 
 ---
 
-## WP-15: Admin Interactions
+## WP-15: Admin Interactions ✅
 
 Like, reply, boost, edit, delete — all from the timeline via Web Components and JSON API.
 
-- [ ] Like/unlike toggle: `fetch()` call to JSON API → generate and deliver `Like` / `Undo{Like}` activity (§4.5), update `<status-item>` button state
-- [ ] Boost/unboost toggle: `fetch()` call to JSON API → generate and deliver `Announce` / `Undo{Announce}` activity (§4.5), update `<status-item>` button state
-- [ ] Reply: inline compose form within `<status-item>` → publish as `Create{Note}` with `inReplyTo` → deliver to author + followers (§4.5)
-- [ ] Edit own note: open edit form in `<status-item>` → update note via JSON API → deliver `Update{Note}` (§4.3)
-- [ ] Delete own note: confirm → delete note via JSON API → deliver `Delete` with Tombstone (§4.3)
-- [ ] Tests for each interaction type: JSON API call, activity generation, delivery
+- [x] Like/unlike toggle: `fetch()` call to JSON API → generate and deliver `Like` / `Undo{Like}` activity (§4.5), update `<status-item>` button state
+- [x] Boost/unboost toggle: `fetch()` call to JSON API → generate and deliver `Announce` / `Undo{Announce}` activity (§4.5), update `<status-item>` button state
+- [x] Reply: inline compose form within `<status-item>` → publish as `Create{Note}` with `inReplyTo` → deliver to author + followers (§4.5)
+- [x] Edit own note: open edit form in `<status-item>` → update note via JSON API → deliver `Update{Note}` (§4.3)
+- [x] Delete own note: confirm → delete note via JSON API → deliver `Delete` with Tombstone (§4.3)
+- [x] Tests for each interaction type: JSON API call, activity generation, delivery
 
 **Produces:** Full interaction capability from the admin timeline.
 

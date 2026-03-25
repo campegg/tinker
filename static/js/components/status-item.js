@@ -69,6 +69,7 @@ class StatusItem extends HTMLElement {
 
         const likedClass = this.#liked ? ' data-active="true" class="status-item__action-btn status-item__like"' : 'class="status-item__action-btn status-item__like"';
         const repostedAttr = this.#reposted ? ' data-active="true"' : "";
+        const replyActive = this.#replyOpen ? ' data-active="true"' : "";
 
         const ownActions = own
             ? `<div class="status-item__actions-end">
@@ -120,8 +121,8 @@ class StatusItem extends HTMLElement {
                 <div class="status-item__actions">
                     <button ${likedClass} data-post-id="${_esc(postId)}" aria-label="Like" aria-pressed="${this.#liked}">${_iconHeart()}
                     </button>
-                    <button class="status-item__action-btn js-reply" aria-label="Reply">${_iconReply()}</button>
-                    <button class="status-item__action-btn js-repost"${repostedAttr} data-post-id="${_esc(postId)}" aria-label="Repost" aria-pressed="${this.#reposted}">${_iconRepost()}
+                    <button class="status-item__action-btn status-item__reply js-reply"${replyActive} aria-label="Reply" aria-pressed="${this.#replyOpen}">${_iconReply()}</button>
+                    <button class="status-item__action-btn status-item__repost js-repost"${repostedAttr} data-post-id="${_esc(postId)}" aria-label="Repost" aria-pressed="${this.#reposted}">${_iconRepost()}
                     </button>
                     ${ownActions}
                 </div>
