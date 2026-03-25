@@ -40,12 +40,12 @@
     --base-border-radius: calc(var(--base-margin) * 0.16667); /* 4px */
 
     /* Typography scale */
-    --font-size-xs: calc(var(--font-size-sm) * 0.875); /* 12.25px */
+    --font-size-xs: calc(var(--font-size-sm) * 0.875); /* ~12.25px */
     --font-size-sm: calc(var(--font-size-md) * 0.875); /* 14px */
     --font-size-md: var(--base-font-size); /* 16px */
     --font-size-lg: calc(var(--font-size-md) * 1.25); /* 20px */
     --font-size-xl: calc(var(--font-size-lg) * 1.25); /* 25px */
-    --font-size-xxl: calc(var(--font-size-xl) * 1.25); /* 31.25px */
+    --font-size-xxl: calc(var(--font-size-xl) * 1.25); /* ~31.25px */
 
     /* Font weights */
     --font-weight-xlight: 210;
@@ -56,12 +56,15 @@
     --font-weight-xbold: 730;
 
     /* Spacing scale */
-    --margin-xs: calc(var(--margin-sm) * 0.66667); /* 12px */
+    --margin-xs: calc(var(--margin-sm) * 0.66667); /* ~12px */
     --margin-sm: calc(var(--margin-md) * 0.75); /* 18px */
     --margin-md: var(--base-margin); /* 24px */
     --margin-lg: calc(var(--margin-md) * 1.25); /* 30px */
     --margin-xl: calc(var(--margin-md) * 1.5); /* 36px */
     --margin-xxl: calc(var(--margin-md) * 1.75); /* 42px */
+
+    /* Shared typographic detail — applied wherever text is uppercase and small */
+    --uppercase-letter-spacing: 0.04em;
 
     /* Base typography */
     font-family: inter, system-ui, ui-sans-serif, sans-serif;
@@ -73,13 +76,14 @@
     -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%;
 
-    /* Smooth scrolling */
+    /* Smooth scrolling — only when the user hasn't requested reduced motion */
     @media (prefers-reduced-motion: no-preference) {
         scroll-behavior: smooth;
     }
 }
 
-/* Respect reduced motion preference */
+/* Honour reduced-motion preference: cut all transition and animation durations to
+   near-zero so the layout still works but nothing visually moves. */
 @media screen and (prefers-reduced-motion: reduce) {
     * {
         transition-duration: 0.001ms !important;
@@ -106,55 +110,6 @@
     src: url("/assets/fonts/InterVariable-Italic.woff2") format("woff2");
 }
 
-@font-feature-values inter {
-    @character-variant {
-        cv01: 1;
-        cv02: 2;
-        cv03: 3;
-        cv04: 4;
-        cv05: 5;
-        cv06: 6;
-        cv07: 7;
-        cv08: 8;
-        cv09: 9;
-        cv10: 10;
-        cv11: 11;
-        cv12: 12;
-        cv13: 13;
-        alt-1: 1;
-        alt-3: 9;
-        open-4: 2;
-        open-6: 3;
-        open-9: 4;
-        lc-l-with-tail: 5;
-        simplified-u: 6;
-        alt-double-s: 7;
-        uc-i-with-serif: 8;
-        uc-g-with-spur: 10;
-        single-story-a: 11;
-        compact-lc-f: 12;
-        compact-lc-t: 13;
-    }
-    @styleset {
-        ss01: 1;
-        ss02: 2;
-        ss03: 3;
-        ss04: 4;
-        ss05: 5;
-        ss06: 6;
-        ss07: 7;
-        ss08: 8;
-        open-digits: 1;
-        disambiguation: 2;
-        disambiguation-except-zero: 4;
-        round-quotes-and-commas: 3;
-        square-punctuation: 7;
-        square-quotes: 8;
-        circled-characters: 5;
-        squared-characters: 6;
-    }
-}
-
 /*---------- reset ----------*/
 
 *,
@@ -165,7 +120,7 @@
     padding: 0;
 }
 
-/*---------- elements ----------*/
+/*---------- base elements ----------*/
 
 body {
     font-size: var(--font-size-md);
@@ -173,24 +128,16 @@ body {
     display: flex;
     flex-direction: column;
     min-block-size: 100vh;
-    min-block-size: 100dvh;
+    min-block-size: 100dvh; /* override with dvh where supported */
     background-color: var(--bg);
     color: var(--text);
 }
 
-input {
-    &:focus {
-        outline: 0;
-    }
-}
-
 /*---------- admin layout ----------*/
 
-.admin-page {
-    display: flex;
-    flex-direction: column;
-}
-
+/* Custom elements are display:inline by default; force block so .admin-nav's
+   percentage widths resolve against the viewport, not the element's own
+   shrunken content width. */
 nav-bar {
     display: block;
 }
@@ -278,7 +225,6 @@ nav-bar {
 .compose-box {
     display: flex;
     flex-direction: column;
-    gap: 0;
     margin-block-end: var(--margin-md);
 }
 
@@ -326,23 +272,28 @@ nav-bar {
     gap: var(--margin-xs);
 }
 
-.compose-box__btn {
+/* Shared chrome for both the text "Post" button and the icon attachment button. */
+.compose-box__btn,
+.compose-box__icon-btn {
     block-size: var(--margin-md);
-    padding-inline: var(--margin-xs);
     background: var(--bg);
     border: 1px solid var(--borders);
     border-radius: var(--base-border-radius);
-    font-family: inherit;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semi);
-    color: var(--text);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     cursor: pointer;
+    color: var(--text);
 
     &:hover {
         border-color: color-mix(in oklch, var(--borders), var(--text) 30%);
     }
+}
+
+.compose-box__btn {
+    padding-inline: var(--margin-xs);
+    font-family: inherit;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semi);
+    text-transform: uppercase;
+    letter-spacing: var(--uppercase-letter-spacing);
 
     &:disabled {
         opacity: 0.5;
@@ -355,16 +306,6 @@ nav-bar {
     align-items: center;
     justify-content: center;
     inline-size: var(--margin-md);
-    block-size: var(--margin-md);
-    background: var(--bg);
-    border: 1px solid var(--borders);
-    border-radius: var(--base-border-radius);
-    cursor: pointer;
-    color: var(--text);
-
-    &:hover {
-        border-color: color-mix(in oklch, var(--borders), var(--text) 30%);
-    }
 }
 
 .compose-box__previews {
@@ -532,19 +473,19 @@ nav-bar {
     }
 
     &[data-active="true"] {
-        color: var(--primary);
-    }
+        color: var(--primary); /* fallback for any action button not listed below */
 
-    &[data-active="true"].status-item__like {
-        color: color-mix(in oklch, var(--pink), var(--red) 40%);
-    }
+        &.status-item__like {
+            color: color-mix(in oklch, var(--pink), var(--red) 40%);
+        }
 
-    &[data-active="true"].status-item__reply {
-        color: var(--purple);
-    }
+        &.status-item__reply {
+            color: var(--purple);
+        }
 
-    &[data-active="true"].status-item__repost {
-        color: var(--green);
+        &.status-item__repost {
+            color: var(--green);
+        }
     }
 }
 
@@ -554,59 +495,68 @@ nav-bar {
     display: flex;
     align-items: center;
     gap: var(--margin-xs);
-}
 
-.actor-identity__avatar {
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-    background: color-mix(in oklch, var(--borders), var(--bg) 50%);
-}
+    &__avatar {
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: color-mix(in oklch, var(--borders), var(--bg) 50%);
+    }
 
-.actor-identity--sm .actor-identity__avatar {
-    inline-size: 28px;
-    block-size: 28px;
-}
+    &__info {
+        display: flex;
+        flex-direction: column;
+        min-inline-size: 0;
+    }
 
-.actor-identity--md .actor-identity__avatar {
-    inline-size: var(--margin-xxl);
-    block-size: var(--margin-xxl);
-}
+    &__name {
+        font-weight: var(--font-weight-semi);
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 
-.actor-identity--lg .actor-identity__avatar {
-    inline-size: 56px;
-    block-size: 56px;
-}
+    &__handle {
+        font-size: var(--font-size-xs);
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 
-.actor-identity__info {
-    display: flex;
-    flex-direction: column;
-    min-inline-size: 0;
-}
+    &--sm {
+        & .actor-identity__avatar {
+            inline-size: 28px;
+            block-size: 28px;
+        }
 
-.actor-identity__name {
-    font-weight: var(--font-weight-semi);
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+        & .actor-identity__name {
+            font-size: var(--font-size-sm);
+        }
+    }
 
-.actor-identity--sm .actor-identity__name {
-    font-size: var(--font-size-sm);
-}
+    &--md {
+        & .actor-identity__avatar {
+            inline-size: var(--margin-xxl);
+            block-size: var(--margin-xxl);
+        }
 
-.actor-identity--md .actor-identity__name,
-.actor-identity--lg .actor-identity__name {
-    font-size: var(--font-size-md);
-}
+        & .actor-identity__name {
+            font-size: var(--font-size-md);
+        }
+    }
 
-.actor-identity__handle {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    &--lg {
+        & .actor-identity__avatar {
+            inline-size: 56px;
+            block-size: 56px;
+        }
+
+        & .actor-identity__name {
+            font-size: var(--font-size-md);
+        }
+    }
 }
 
 /*---------- notification badge ----------*/
@@ -624,10 +574,6 @@ nav-bar {
     color: var(--true-white);
     letter-spacing: 0;
     vertical-align: middle;
-}
-
-.notification-badge[hidden] {
-    display: none;
 }
 
 /*---------- timeline ----------*/
@@ -664,7 +610,6 @@ body:has(.login-form) {
     display: block;
     inline-size: 100%;
     block-size: var(--margin-xl);
-    padding-block: 0;
     padding-inline: var(--margin-xs);
     background: var(--true-white);
     border: 1px solid var(--borders);
@@ -695,6 +640,7 @@ body:has(.login-form) {
     font-weight: var(--font-weight-semi);
     color: var(--text);
     text-transform: uppercase;
+    letter-spacing: var(--uppercase-letter-spacing);
     cursor: pointer;
 
     &:hover {
