@@ -267,7 +267,7 @@ async def get_csrf_token() -> Response:
 # Timeline
 # ---------------------------------------------------------------------------
 
-_PAGE_SIZE = 20
+_PAGE_SIZE = 50
 
 
 @api.route("/timeline", methods=["GET"])

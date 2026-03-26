@@ -18,7 +18,8 @@
       "mcp__figma__get_screenshot",
       "Bash(curl -s http://127.0.0.1:5000/assets/js/components/nav-bar.js)",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(/Users/cam/Projects/tinker/.venv/bin/python -m pytest --tb=short -q tests/)"
+      "Bash(/Users/cam/Projects/tinker/.venv/bin/python -m pytest --tb=short -q tests/)",
+      "mcp__figma__use_figma"
     ]
   }
 }

@@ -217,13 +217,13 @@ class TestGetNotifications:
         assert payload["data"][0]["is_following"] is False
 
     async def test_cursor_pagination_first_page(self, application: Quart) -> None:
-        """First page returns 20 items and ``has_more=True`` when 25 exist."""
+        """First page returns 50 items and ``has_more=True`` when 55 exist."""
         from datetime import UTC, datetime, timedelta
 
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
             base_time = datetime(2026, 1, 1, tzinfo=UTC)
-            for i in range(25):
+            for i in range(55):
                 _seed_notification(db, created_at=base_time + timedelta(seconds=i))
             await db.commit()
 
@@ -232,7 +232,7 @@ class TestGetNotifications:
             resp = await client.get("/admin/api/notifications")
 
         payload = json.loads(await resp.get_data())
-        assert len(payload["data"]) == 20
+        assert len(payload["data"]) == 50
         assert payload["has_more"] is True
         assert payload["cursor"] is not None
 
@@ -243,7 +243,7 @@ class TestGetNotifications:
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
             base_time = datetime(2026, 1, 1, tzinfo=UTC)
-            for i in range(25):
+            for i in range(55):
                 _seed_notification(db, created_at=base_time + timedelta(seconds=i))
             await db.commit()
 

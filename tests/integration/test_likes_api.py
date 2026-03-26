@@ -193,11 +193,11 @@ class TestListLikes:
         assert data["data"] == []
 
     async def test_pagination(self, application: Quart) -> None:
-        """First page returns 20 items and ``has_more=True`` when 25 exist."""
+        """First page returns 50 items and ``has_more=True`` when 55 exist."""
         base_time = datetime(2026, 1, 1, tzinfo=UTC)
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
-            for i in range(25):
+            for i in range(55):
                 note_uri = f"https://remote.example.com/notes/{i}"
                 _seed_like(db, note_uri, created_at=base_time + timedelta(seconds=i))
                 _seed_timeline_item(db, note_uri)
@@ -208,7 +208,7 @@ class TestListLikes:
             resp = await client.get("/admin/api/likes")
 
         payload = json.loads(await resp.get_data())
-        assert len(payload["data"]) == 20
+        assert len(payload["data"]) == 50
         assert payload["has_more"] is True
         assert payload["cursor"] is not None
 
