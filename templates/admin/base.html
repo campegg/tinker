@@ -3,26 +3,29 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Home — Tinker</title>
+        <title>{% block title %}{% endblock %} — Tinker</title>
         <link rel="stylesheet" href="/assets/css/styles.css" />
     </head>
     <body class="admin-page">
         <script>
-            window.__TINKER__ = { csrf: "{{csrf_token}}" };
+            window.__TINKER__ = { csrf: "{{ csrf_token }}" };
         </script>
 
-        <nav-bar active="timeline"></nav-bar>
+        <nav-bar
+            active="{{ nav_active }}"
+            user-name="{{ user_name }}"
+            user-handle="{{ user_handle }}"
+            user-avatar="{{ user_avatar }}"
+        ></nav-bar>
 
         <main class="admin-content">
-            <compose-box></compose-box>
-            <timeline-view></timeline-view>
+            {% block main %}{% endblock %}
         </main>
 
+        {# Foundation scripts — present on every admin page. #}
         <script type="module" src="/assets/js/components/actor-identity.js"></script>
         <script type="module" src="/assets/js/components/nav-bar.js"></script>
         <script type="module" src="/assets/js/components/notification-badge.js"></script>
-        <script type="module" src="/assets/js/components/status-item.js"></script>
-        <script type="module" src="/assets/js/components/compose-box.js"></script>
-        <script type="module" src="/assets/js/components/timeline-view.js"></script>
+        {% block scripts %}{% endblock %}
     </body>
 </html>

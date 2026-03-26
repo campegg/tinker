@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Following{% endblock %}
+
+{% block main %}
+    <following-list></following-list>
+{% endblock %}
+
+{% block scripts %}
+    <script type="module" src="/assets/js/components/follow-button.js"></script>
+    <script type="module" src="/assets/js/components/person-row.js"></script>
+    <script type="module" src="/assets/js/components/following-list.js"></script>
+    <script type="module" src="/assets/js/components/search-modal.js"></script>
+    <script type="module" src="/assets/js/components/actor-profile-modal.js"></script>
+    <script type="module" src="/assets/js/components/profile-card.js"></script>
+    <script type="module" src="/assets/js/components/actor-banner.js"></script>
+{% endblock %}

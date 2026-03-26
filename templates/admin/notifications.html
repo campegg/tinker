@@ -1,0 +1,14 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block main %}
+    <notification-list></notification-list>
+{% endblock %}
+
+{% block scripts %}
+    <script type="module" src="/assets/js/components/status-item.js"></script>
+    <script type="module" src="/assets/js/components/follow-button.js"></script>
+    <script type="module" src="/assets/js/components/notification-item.js"></script>
+    <script type="module" src="/assets/js/components/notification-list.js"></script>
+{% endblock %}

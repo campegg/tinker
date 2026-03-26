@@ -24,7 +24,12 @@ def create_app() -> Quart:
     Returns:
         A configured :class:`~quart.Quart` application instance.
     """
-    app = Quart(__name__, static_folder="../static", static_url_path="/assets")
+    app = Quart(
+        __name__,
+        static_folder="../static",
+        static_url_path="/assets",
+        template_folder="../templates",
+    )
 
     config = load_config()
     app.config.from_mapping(config)

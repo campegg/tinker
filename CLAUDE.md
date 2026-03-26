@@ -21,7 +21,7 @@ Key rule: complete the current work package (tests passing, ruff clean, mypy str
 | `/`             | Home page — static welcome/branding page     | No       | Self-contained static HTML (inline CSS/JS) |
 | `/{actor}`      | Public profile + AP actor endpoint           | No       | Self-contained static HTML (inline CSS/JS) for browsers; JSON-LD for AP consumers (content negotiation) |
 | `/login`        | Login page                                   | No       | Static HTML page; styles from shared stylesheet (`/assets/css/styles.css`) |
-| `/admin/*`      | Admin interface                              | Yes      | Static HTML shells + Web Components + JSON API |
+| `/admin/*`      | Admin interface                              | Yes      | Jinja2 templates + Web Components + JSON API |
 
 ## Tech Stack
 
@@ -39,7 +39,7 @@ Key rule: complete the current work package (tests passing, ruff clean, mypy str
 | Password hashing   | argon2-cffi                         | Not bcrypt                                   |
 | Reverse proxy      | Caddy                               | TLS termination, static file serving         |
 | Background tasks   | asyncio (in-process)                | No external queues or brokers                |
-| Admin UI           | Static HTML + Web Components + vanilla JS | Static HTML shells, native Web Components, JSON API |
+| Admin UI           | Jinja2 + Web Components + vanilla JS | Jinja2 templates in ``templates/admin/``, native Web Components, JSON API |
 | Testing            | pytest + pytest-asyncio             |                                              |
 | Linting/formatting | ruff                                |                                              |
 | Type checking      | mypy (strict mode)                  |                                              |
@@ -87,9 +87,18 @@ tinker/
 │   │   ├── home.html        # Home page / (WP-07)
 │   │   ├── profile.html     # Public profile page (/{actor}), browser view
 │   │   └── login.html       # Login page (/login)
-│   ├── admin/               # Static HTML shells for admin views (WP-13+)
+│   ├── admin/               # Empty — admin shells moved to templates/admin/ (ADR-001)
 │   └── js/
 │       └── components/      # Web Components (Custom Elements) — admin only (WP-13+)
+├── templates/
+│   └── admin/               # Jinja2 admin shell templates
+│       ├── base.html        # Shared base: <head>, <nav-bar>, foundation scripts
+│       ├── timeline.html    # Home / timeline view
+│       ├── notifications.html
+│       ├── profile.html
+│       ├── following.html
+│       ├── followers.html
+│       └── likes.html
 ├── db/                      # SQLite database file (tinker.db)
 ├── media/                   # Uploaded images (optimised) + cached avatars
 ├── tests/
@@ -130,7 +139,7 @@ Caddy and systemd configs live outside `tinker/` — they are system-level conce
 
 7. **Two-layer configuration.** Environment variables for infrastructure (domain, paths, secrets) — loaded at startup, immutable. Database settings table for identity and content (display name, bio, avatar, links) — editable through the admin at runtime. See `requirements.md` §8.
 
-8. **Shared assets, no server-side template engine.** All pages — public and admin alike — may link to external stylesheets, JavaScript files, and Web Components served from `/assets/`. There is no server-side template engine; any dynamic content is injected via simple string interpolation before serving. The `/{actor}` profile page uses this approach to embed display name, bio, avatar, handle, and links from the settings table. Admin pages (`/admin/*`) are static HTML shells that load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should remain readable without JavaScript; interactivity is a progressive enhancement.
+8. **Jinja2 for admin shells; string interpolation for public pages.** Admin views (`/admin/*`) are rendered by Jinja2 templates that live in `templates/admin/`. A shared base template (`templates/admin/base.html`) owns the `<head>`, `<nav-bar>`, and foundation `<script>` tags; each view extends it and overrides `{% block title %}`, `{% block main %}`, and `{% block scripts %}`. Jinja2's HTML auto-escaping is enabled by default for `.html` templates, which protects against XSS in injected user values (display name, handle, avatar, CSRF token). The `/{actor}` public profile page is the exception: it still uses simple string interpolation (not Jinja2) to embed display name, bio, avatar, handle, and links at serve time. Public pages do not use Jinja2 — see ADR-001. Admin pages load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should remain readable without JavaScript; interactivity is a progressive enhancement.
 
 9. **`/{actor}` is dual-purpose.** The actor route serves both as the public profile page (HTML for browsers) and the ActivityPub actor endpoint (JSON-LD for federation consumers). Content negotiation on `Accept` header determines the response. This is the same URI used in WebFinger and federation.
 
@@ -515,7 +524,7 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 ### Public Pages
 
 - Home page (`/`), public profile (`/{actor}`), and login page (`/login`) are static HTML pages. They may link to external stylesheets, JavaScript files, and Web Components served from `/assets/` — there is no requirement to inline assets.
-- The `/{actor}` profile page has its content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table — not a template engine.
+- The `/{actor}` profile page has its content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table — not Jinja2. (Admin pages use Jinja2; public pages do not. See ADR-001.)
 - Pages must not require JavaScript to display their core content; JS is a progressive enhancement only.
 - The shared stylesheet (`static/css/styles.css`, served at `/assets/css/styles.css`) owns the OKLCH color palette, semantic `light-dark()` tokens, `color-mix()` shade derivation, Inter `@font-face` declarations, the box-model reset, and page-specific component styles (e.g. `.login-form`). Prefer adding new component styles here rather than in `<style>` blocks.
 
@@ -530,7 +539,9 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 
 ### Admin UI
 
-- Static HTML shells served from `static/admin/`. Each view is a minimal HTML page that loads Web Components.
+- Jinja2 templates in `templates/admin/`. `base.html` owns all shared boilerplate; each view template extends it with `{% block title %}`, `{% block main %}`, and `{% block scripts %}` only.
+- Jinja2 HTML auto-escaping is on by default — never use `| safe` on user-supplied values.
+- Add new admin views by creating a new child template and a one-line `render_template()` call in `app/admin/routes.py`. No other files need to change.
 - Web Components (Custom Elements) for reusable UI pieces (`<timeline-item>`, `<compose-box>`, `<notification-badge>`, etc.).
 - All admin data fetched via JSON API endpoints (under `app/admin/api.py`).
 - Vanilla JS only. No framework, no bundler, no TypeScript. JS files served from `static/js/`.
@@ -577,4 +588,4 @@ What does this decision make easier or harder?
 
 ## Out of Scope
 
-No Webmention, no Article type, no edit history, no polls, no custom emoji, no Move activity, no multi-user, no external queues, no private archive view, no SPA framework, no server-side template engine. See `requirements.md` §13.
+No Webmention, no Article type, no edit history, no polls, no custom emoji, no Move activity, no multi-user, no external queues, no private archive view, no SPA framework. Jinja2 is used for admin shell templates (ADR-001); public pages use plain string interpolation and do not go through Jinja2. See `requirements.md` §13.

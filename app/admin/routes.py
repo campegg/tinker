@@ -1,61 +1,45 @@
 """Auth-gated admin page routes.
 
-Serves the static HTML shells for admin views. All routes in this blueprint
-require an authenticated session via the :func:`~app.admin.auth.require_auth`
-decorator. The HTML shells load Web Components that fetch data from the JSON
-API endpoints defined in ``app/admin/api.py``.
+Serves the Jinja2 HTML templates for admin views. All routes in this
+blueprint require an authenticated session via the
+:func:`~app.admin.auth.require_auth` decorator. Templates live in
+``templates/admin/`` and extend a shared base (``admin/base.html``) that
+owns the ``<head>``, ``<nav-bar>``, and foundation ``<script>`` tags.
 
-The HTML shells are loaded from ``static/admin/`` and served with server-side
-injection of per-user values (display name, handle, avatar URL, CSRF token)
-that are needed by shell-level Web Components on every page load.
+Per-request context (display name, handle, avatar, CSRF token) is built
+by :func:`_shell_context` and passed to :func:`~quart.render_template`
+as keyword arguments. Jinja2 HTML auto-escaping is enabled by default for
+``.html`` templates, so injected values are safe against XSS without
+additional filtering.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from quart import Blueprint, Response, current_app, g, redirect
+from quart import Blueprint, current_app, g, redirect, render_template
 
 from app.admin.auth import get_or_create_csrf_token, require_auth
 from app.services.settings import SettingsService
 
 admin = Blueprint("admin", __name__, url_prefix="/admin")
 
-# In-memory cache for the HTML shell templates.  Bypassed in debug mode so
-# changes to static files are reflected without restarting the server.
-_template_cache: dict[str, str] = {}
 
-
-def _load_shell(name: str) -> str:
-    """Load an admin HTML shell from ``static/admin/``, caching after first read.
-
-    Args:
-        name: The filename within ``static/admin/`` (e.g. ``"timeline.html"``).
-
-    Returns:
-        The raw HTML string with ``{{placeholder}}`` injection markers.
-
-    Raises:
-        FileNotFoundError: If the shell file does not exist.
-    """
-    if not current_app.debug and name in _template_cache:
-        return _template_cache[name]
-    path = Path(current_app.static_folder or "static") / "admin" / name
-    content = path.read_text(encoding="utf-8")
-    if not current_app.debug:
-        _template_cache[name] = content
-    return content
-
-
-async def _shell_context() -> tuple[str, str, str, str]:
-    """Build the per-request injection values shared by all admin shells.
+async def _shell_context(nav_active: str) -> dict[str, str]:
+    """Build the Jinja2 template context shared by all admin views.
 
     Reads display name, handle, and avatar from the settings table, and
     retrieves (or creates) the session CSRF token.
 
+    Args:
+        nav_active: The key of the currently active nav item — one of
+            ``"timeline"``, ``"notifications"``, ``"profile"``,
+            ``"likes"``, ``"following"``, ``"followers"``.
+
     Returns:
-        A tuple of ``(display_name, handle, avatar_url, csrf_token)``.
+        A dict suitable for unpacking as ``render_template`` keyword
+        arguments, with keys ``nav_active``, ``user_name``,
+        ``user_handle``, ``user_avatar``, and ``csrf_token``.
     """
     settings_svc = SettingsService(g.db_session)
     domain: str = current_app.config["TINKER_DOMAIN"]
@@ -67,27 +51,13 @@ async def _shell_context() -> tuple[str, str, str, str]:
     avatar_url = f"/media/{raw_avatar}" if raw_avatar else ""
     csrf_token = get_or_create_csrf_token()
 
-    return display_name, handle, avatar_url, csrf_token
-
-
-def _inject(html: str, display_name: str, handle: str, avatar_url: str, csrf_token: str) -> str:
-    """Replace ``{{placeholder}}`` markers in the shell HTML.
-
-    Args:
-        html: The raw shell HTML with injection markers.
-        display_name: The local user's display name.
-        handle: The local user's full Fediverse handle (``@user@domain``).
-        avatar_url: The URL path for the local user's avatar.
-        csrf_token: The session CSRF token for admin API requests.
-
-    Returns:
-        The HTML string with all markers replaced.
-    """
-    html = html.replace("{{user_name}}", display_name)
-    html = html.replace("{{user_handle}}", handle)
-    html = html.replace("{{user_avatar}}", avatar_url)
-    html = html.replace("{{csrf_token}}", csrf_token)
-    return html
+    return {
+        "nav_active": nav_active,
+        "user_name": display_name,
+        "user_handle": handle,
+        "user_avatar": avatar_url,
+        "csrf_token": csrf_token,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +71,7 @@ async def index() -> Any:
     """Redirect to the timeline — the primary admin view.
 
     Returns:
-        A redirect to the timeline page.
+        A redirect to ``/admin/timeline``.
     """
     return redirect("/admin/timeline")
 
@@ -111,16 +81,10 @@ async def index() -> Any:
 async def timeline() -> Any:
     """Serve the timeline admin view.
 
-    Loads ``static/admin/timeline.html``, injects user-specific values
-    (display name, handle, avatar, CSRF token), and returns it as HTML.
-
     Returns:
-        An HTML response with the timeline shell page.
+        Rendered ``admin/timeline.html`` with the shared template context.
     """
-    html = _load_shell("timeline.html")
-    display_name, handle, avatar_url, csrf_token = await _shell_context()
-    html = _inject(html, display_name, handle, avatar_url, csrf_token)
-    return Response(response=html, status=200, content_type="text/html; charset=utf-8")
+    return await render_template("admin/timeline.html", **await _shell_context("timeline"))
 
 
 @admin.route("/notifications")
@@ -128,13 +92,53 @@ async def timeline() -> Any:
 async def notifications() -> Any:
     """Serve the notifications admin view.
 
-    Loads ``static/admin/notifications.html``, injects user-specific values
-    (display name, handle, avatar, CSRF token), and returns it as HTML.
+    Returns:
+        Rendered ``admin/notifications.html`` with the shared template context.
+    """
+    return await render_template(
+        "admin/notifications.html", **await _shell_context("notifications")
+    )
+
+
+@admin.route("/profile")
+@require_auth
+async def profile() -> Any:
+    """Serve the profile admin view.
 
     Returns:
-        An HTML response with the notifications shell page.
+        Rendered ``admin/profile.html`` with the shared template context.
     """
-    html = _load_shell("notifications.html")
-    display_name, handle, avatar_url, csrf_token = await _shell_context()
-    html = _inject(html, display_name, handle, avatar_url, csrf_token)
-    return Response(response=html, status=200, content_type="text/html; charset=utf-8")
+    return await render_template("admin/profile.html", **await _shell_context("profile"))
+
+
+@admin.route("/likes")
+@require_auth
+async def likes() -> Any:
+    """Serve the liked posts admin view.
+
+    Returns:
+        Rendered ``admin/likes.html`` with the shared template context.
+    """
+    return await render_template("admin/likes.html", **await _shell_context("likes"))
+
+
+@admin.route("/following")
+@require_auth
+async def following() -> Any:
+    """Serve the following list admin view.
+
+    Returns:
+        Rendered ``admin/following.html`` with the shared template context.
+    """
+    return await render_template("admin/following.html", **await _shell_context("following"))
+
+
+@admin.route("/followers")
+@require_auth
+async def followers() -> Any:
+    """Serve the followers list admin view.
+
+    Returns:
+        Rendered ``admin/followers.html`` with the shared template context.
+    """
+    return await render_template("admin/followers.html", **await _shell_context("followers"))
