@@ -265,17 +265,16 @@ class TestLinks:
 
 class TestGetAllProfile:
     async def test_returns_all_profile_settings(self, service: SettingsService) -> None:
-        settings_map = {
-            "display_name": _make_setting("display_name", "Alice"),
-            "bio": _make_setting("bio", "Hello"),
-            "avatar": _make_setting("avatar", "/img/avatar.jpg"),
-            "links": _make_setting("links", '["https://example.com"]'),
+        fake_row = {
+            "display_name": "Alice",
+            "bio": "Hello",
+            "avatar": "/img/avatar.jpg",
+            "links": '["https://example.com"]',
         }
 
-        async def fake_get_by_key(key: str) -> Settings | None:
-            return settings_map.get(key)
-
-        with patch.object(service._repo, "get_by_key", side_effect=fake_get_by_key):
+        with patch.object(
+            service._repo, "get_by_keys", new_callable=AsyncMock, return_value=fake_row
+        ):
             result = await service.get_all_profile()
 
         assert result == {
@@ -287,7 +286,7 @@ class TestGetAllProfile:
         }
 
     async def test_returns_defaults_when_settings_missing(self, service: SettingsService) -> None:
-        with patch.object(service._repo, "get_by_key", new_callable=AsyncMock, return_value=None):
+        with patch.object(service._repo, "get_by_keys", new_callable=AsyncMock, return_value={}):
             result = await service.get_all_profile()
 
         assert result == {

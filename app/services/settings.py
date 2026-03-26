@@ -196,19 +196,27 @@ class SettingsService:
     async def get_all_profile(self) -> dict[str, str | list[str] | None]:
         """Return all profile-related settings as a dictionary.
 
-        Convenience method that fetches display name, bio, avatar, and
-        links in one call.
+        Fetches all five keys in a single ``WHERE key IN (...)`` query
+        rather than five sequential lookups.
 
         Returns:
             A dictionary with keys ``display_name``, ``bio``, ``avatar``,
             ``header_image``, and ``links``.
         """
+        _keys = ["display_name", "bio", "avatar", "header_image", "links"]
+        row = await self._repo.get_by_keys(_keys)
+        try:
+            links_parsed: list[str] = json.loads(row.get("links", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            links_parsed = []
+        if not isinstance(links_parsed, list):
+            links_parsed = []
         return {
-            "display_name": await self.get_display_name(),
-            "bio": await self.get_bio(),
-            "avatar": await self.get_avatar(),
-            "header_image": await self.get_header_image(),
-            "links": await self.get_links(),
+            "display_name": row.get("display_name", ""),
+            "bio": row.get("bio", ""),
+            "avatar": row.get("avatar"),
+            "header_image": row.get("header_image"),
+            "links": links_parsed,
         }
 
     async def seed_defaults(self) -> None:

@@ -19,6 +19,7 @@ from quart import Quart
 import app.admin.auth as auth_module
 from app import create_app
 from app.admin.auth import hash_password
+from app.core.config import PAGE_SIZE
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -193,11 +194,11 @@ class TestListLikes:
         assert data["data"] == []
 
     async def test_pagination(self, application: Quart) -> None:
-        """First page returns 50 items and ``has_more=True`` when 55 exist."""
+        """First page returns PAGE_SIZE items and ``has_more=True`` when PAGE_SIZE+5 exist."""
         base_time = datetime(2026, 1, 1, tzinfo=UTC)
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
-            for i in range(55):
+            for i in range(PAGE_SIZE + 5):
                 note_uri = f"https://remote.example.com/notes/{i}"
                 _seed_like(db, note_uri, created_at=base_time + timedelta(seconds=i))
                 _seed_timeline_item(db, note_uri)
@@ -208,7 +209,7 @@ class TestListLikes:
             resp = await client.get("/admin/api/likes")
 
         payload = json.loads(await resp.get_data())
-        assert len(payload["data"]) == 50
+        assert len(payload["data"]) == PAGE_SIZE
         assert payload["has_more"] is True
         assert payload["cursor"] is not None
 

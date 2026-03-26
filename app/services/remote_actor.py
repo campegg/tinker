@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 import httpx
 import nh3
 
+from app.core.config import USER_AGENT
 from app.models.remote_actor import RemoteActor
 from app.repositories.remote_actor import RemoteActorRepository
 
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ACCEPT_HEADER = "application/activity+json"
-_USER_AGENT = "Tinker/0.1.0"
 _REQUEST_TIMEOUT_SECONDS = 10.0
 
 
@@ -106,7 +106,7 @@ class RemoteActorService:
                     uri,
                     headers={
                         "Accept": _ACCEPT_HEADER,
-                        "User-Agent": _USER_AGENT,
+                        "User-Agent": USER_AGENT,
                     },
                 )
                 response.raise_for_status()

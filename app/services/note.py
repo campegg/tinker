@@ -116,7 +116,6 @@ class NoteService:
             updated_at=now,
         )
         note = await self._repo.add(note)
-        await self._repo.commit()
         return note
 
     async def edit(self, note: Note, body: str) -> Note:

@@ -23,6 +23,7 @@ from quart import Quart
 import app.admin.auth as auth_module
 from app import create_app
 from app.admin.auth import hash_password
+from app.core.config import PAGE_SIZE
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -174,11 +175,11 @@ class TestListFollowing:
         assert "avatar_url" in item
 
     async def test_pagination(self, application: Quart) -> None:
-        """First page returns 50 items and ``has_more=True`` when 55 exist."""
+        """First page returns PAGE_SIZE items and ``has_more=True`` when PAGE_SIZE+5 exist."""
         base_time = datetime(2026, 1, 1, tzinfo=UTC)
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
-            for i in range(55):
+            for i in range(PAGE_SIZE + 5):
                 _seed_following(
                     db,
                     actor_uri=f"https://remote.example.com/users/user{i}",
@@ -191,7 +192,7 @@ class TestListFollowing:
             resp = await client.get("/admin/api/following")
 
         payload = json.loads(await resp.get_data())
-        assert len(payload["data"]) == 50
+        assert len(payload["data"]) == PAGE_SIZE
         assert payload["has_more"] is True
         assert payload["cursor"] is not None
 
@@ -249,11 +250,11 @@ class TestListFollowers:
         assert "handle" in item
 
     async def test_pagination(self, application: Quart) -> None:
-        """First page returns 50 items and ``has_more=True`` when 55 exist."""
+        """First page returns PAGE_SIZE items and ``has_more=True`` when PAGE_SIZE+5 exist."""
         base_time = datetime(2026, 1, 1, tzinfo=UTC)
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
-            for i in range(55):
+            for i in range(PAGE_SIZE + 5):
                 _seed_follower(
                     db,
                     actor_uri=f"https://remote.example.com/users/user{i}",
@@ -266,7 +267,7 @@ class TestListFollowers:
             resp = await client.get("/admin/api/followers")
 
         payload = json.loads(await resp.get_data())
-        assert len(payload["data"]) == 50
+        assert len(payload["data"]) == PAGE_SIZE
         assert payload["has_more"] is True
 
 

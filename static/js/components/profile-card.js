@@ -50,17 +50,10 @@ class ProfileCard extends HTMLElement {
         this.innerHTML = `<div class="profile-card">
             <actor-banner banner-src="${_esc(bannerSrc)}" avatar-src="${_esc(avatarSrc)}" mode="static"></actor-banner>
             <div class="profile-card__body">
-                <div class="profile-card__identity-row">
-                    <actor-identity
-                        actor-uri="${_esc(uri)}"
-                        src="${_esc(avatarSrc)}"
-                        name="${_esc(name)}"
-                        handle="${_esc(handle)}"
-                        size="md"
-                    ></actor-identity>
-                    ${followBtn}
-                </div>
+                <div class="profile-card__name">${_esc(name)}</div>
+                <div class="profile-card__handle">${_esc(handle)}</div>
                 ${bioSection}
+                ${followBtn}
             </div>
         </div>`;
     }

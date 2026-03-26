@@ -1,13 +1,48 @@
-"""Configuration module for loading environment variables.
+"""Application constants and environment-variable configuration.
 
-Loads infrastructure-level configuration from environment variables,
-with .env file support for local development.
+This module is the single home for two distinct kinds of configuration:
+
+1. **App-level constants** — values that are fixed at build time and do not
+   vary between deployments (e.g. ``USER_AGENT``, ``PAGE_SIZE``).  Add new
+   application constants here; never scatter them as module-level literals in
+   the modules that use them.
+
+2. **Infrastructure config** — deployment-specific values loaded from
+   environment variables at startup via :func:`load_config`.  ``.env`` is
+   reserved for these values only; application constants belong here, not
+   in ``.env``.
 """
 
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# HTTP User-Agent header sent on all outbound federation and media requests.
+USER_AGENT = "Tinker/0.1.0"
+
+# Number of items returned per page by the admin JSON API endpoints
+# (timeline, notifications, likes, followers, following).
+PAGE_SIZE = 50
+
+# Number of activities returned per page in the ActivityPub outbox collection.
+OUTBOX_PAGE_SIZE = 20
+
+# Number of actors returned per page in the ActivityPub followers/following collections.
+COLLECTION_PAGE_SIZE = 50
+
+
+def make_actor_uri(domain: str, username: str) -> str:
+    """Return the canonical ActivityPub actor URI for a local user.
+
+    Args:
+        domain: The instance domain (e.g. ``"example.com"``).
+        username: The local actor username.
+
+    Returns:
+        The canonical actor URI, e.g. ``"https://example.com/alice"``.
+    """
+    return f"https://{domain}/{username}"
 
 
 def load_config() -> dict[str, str]:

@@ -23,6 +23,8 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
+from app.core.config import USER_AGENT
+
 try:
     import pillow_heif
 
@@ -72,7 +74,6 @@ _MIME_EXT: dict[str, str] = {
 }
 
 _AVATAR_FETCH_TIMEOUT: float = 10.0
-_USER_AGENT = "Tinker/0.1.0"
 
 # Subdirectory names under TINKER_MEDIA_PATH.
 _UPLOADS_SUBDIR = "uploads"
@@ -155,7 +156,7 @@ def _strip_and_encode(img: Image.Image, output_format: str) -> bytes:
 
     # Build a fresh image with only raw pixel data — no info dict, no EXIF.
     clean = Image.new(img.mode, img.size)
-    clean.putdata(list(img.getdata()))
+    clean.putdata(img.getdata())
 
     if output_format == "JPEG":
         clean.save(buf, format="JPEG", quality=85, optimize=True)
@@ -181,7 +182,7 @@ def _save_gif(img: Image.Image, buf: io.BytesIO) -> None:
 
     if n_frames == 1:
         clean = Image.new(img.mode, img.size)
-        clean.putdata(list(img.getdata()))
+        clean.putdata(img.getdata())
         clean.save(buf, format="GIF")
         return
 
@@ -278,7 +279,7 @@ async def proxy_avatar(remote_url: str, media_path: str) -> str | None:
     try:
         async with httpx.AsyncClient(
             timeout=_AVATAR_FETCH_TIMEOUT,
-            headers={"User-Agent": _USER_AGENT},
+            headers={"User-Agent": USER_AGENT},
             follow_redirects=True,
         ) as client:
             response = await client.get(remote_url)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.config import OUTBOX_PAGE_SIZE
 from app.services.note import NoteService
 
 # ---------------------------------------------------------------------------
@@ -21,7 +22,9 @@ async def _create_note(
         session = app.config["DB_SESSION_FACTORY"]()
         try:
             service = NoteService(session, "test.example.com", "testuser")
-            return await service.create(body, in_reply_to=in_reply_to)
+            note = await service.create(body, in_reply_to=in_reply_to)
+            await session.commit()
+            return note
         finally:
             await session.close()
 
@@ -279,8 +282,8 @@ class TestOutboxCollection:
         assert items[1]["object"]["source"]["content"] == "First note"
 
     async def test_next_link_absent_when_fewer_than_page_size(self, client: Any, app: Any) -> None:
-        # Create fewer notes than the page size (20).
-        for i in range(3):
+        # Create fewer notes than the page size.
+        for i in range(OUTBOX_PAGE_SIZE - 5):
             await _create_note(app, body=f"Note {i}")
 
         response = await client.get("/testuser/outbox?page=true")
@@ -288,8 +291,8 @@ class TestOutboxCollection:
         assert "next" not in data
 
     async def test_next_link_present_at_page_boundary(self, client: Any, app: Any) -> None:
-        # Create exactly 20 notes (the page size) to trigger a "next" link.
-        for i in range(20):
+        # Create exactly OUTBOX_PAGE_SIZE notes to trigger a "next" link.
+        for i in range(OUTBOX_PAGE_SIZE):
             await _create_note(app, body=f"Note {i}")
 
         response = await client.get("/testuser/outbox?page=true")
@@ -299,8 +302,8 @@ class TestOutboxCollection:
         assert "page=true" in data["next"]
 
     async def test_max_id_pagination_returns_older_items(self, client: Any, app: Any) -> None:
-        # Create 25 notes so that the second page has items.
-        for i in range(25):
+        # Create OUTBOX_PAGE_SIZE + 5 notes so that the second page has items.
+        for i in range(OUTBOX_PAGE_SIZE + 5):
             await _create_note(app, body=f"Note {i:02d}")
 
         # Fetch the first page and extract the "next" cursor.

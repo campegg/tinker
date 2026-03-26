@@ -38,6 +38,7 @@ from urllib.parse import urlparse
 import httpx
 import nh3
 
+from app.core.config import USER_AGENT
 from app.models.follower import Follower
 from app.models.like import Like
 from app.models.notification import Notification
@@ -105,7 +106,6 @@ _inbox_attempts: dict[str, list[float]] = defaultdict(list)
 # ---------------------------------------------------------------------------
 
 _FETCH_TIMEOUT_SECONDS: float = 10.0
-_USER_AGENT = "Tinker/0.1.0"
 
 # ---------------------------------------------------------------------------
 # InboxContext — bundles infrastructure params for background tasks
@@ -174,6 +174,9 @@ async def check_inbox_rate_limit(ip: str) -> bool:
         if len(_inbox_attempts[ip]) >= _INBOX_RATE_LIMIT_MAX:
             return False
         _inbox_attempts[ip].append(now)
+        # Evict IPs whose last attempt has expired to prevent unbounded growth.
+        for evict_ip in [k for k, ts in _inbox_attempts.items() if not ts or ts[-1] < cutoff]:
+            del _inbox_attempts[evict_ip]
         return True
 
 
@@ -313,7 +316,7 @@ async def _fetch_ap_object(uri: str) -> dict[str, Any] | None:
                 uri,
                 headers={
                     "Accept": "application/activity+json",
-                    "User-Agent": _USER_AGENT,
+                    "User-Agent": USER_AGENT,
                 },
             )
             response.raise_for_status()
@@ -500,8 +503,7 @@ async def _handle_follow(
             status="accepted",
             follow_activity_uri=follow_activity_uri,
         )
-        follower_repo._session.add(follower)
-        await session.flush()
+        await follower_repo.add(follower)
 
     # Build and deliver the Accept{Follow} activity.
     follow_id = activity.get("id", actor_uri)
@@ -969,14 +971,14 @@ async def _handle_like(
         activity_uri=activity_id,
     )
     try:
-        await like_repo.add(like)
-        await session.flush()
+        async with session.begin_nested():
+            await like_repo.add(like)
+            await session.flush()
     except IntegrityError:
         # Two concurrent deliveries of the same Like both passed the
         # existence check above before either committed — the second one
-        # hits the UNIQUE constraint on activity_uri.  Roll back the
-        # savepoint and treat this as a duplicate.
-        await session.rollback()
+        # hits the UNIQUE constraint on activity_uri.  The savepoint is
+        # rolled back, leaving the rest of the transaction intact.
         logger.debug("Concurrent duplicate Like activity %r — ignoring", activity_id)
         return
 
@@ -1042,10 +1044,8 @@ async def _handle_delete(
 
     # Remove any Like records for this object.
     like_repo = LikeRepository(session)
-    like = await like_repo.get_by_note_uri(object_id)
-    if like is not None:
-        await like_repo.delete(like)
-        logger.debug("Deleted Like record for object %r", object_id)
+    await like_repo.delete_by_note_uri(object_id)
+    logger.debug("Bulk-deleted Like records for object %r", object_id)
 
 
 async def _handle_update(

@@ -195,7 +195,9 @@ class TestNoteServiceCreate:
         added_note: Note = mock_add.call_args[0][0]
         assert added_note.in_reply_to is None
 
-    async def test_calls_add_and_commit(self, service: NoteService) -> None:
+    async def test_calls_add_without_commit(self, service: NoteService) -> None:
+        # NoteService.create() flushes via repo.add() but does NOT commit;
+        # the caller (api.py note creation route) owns the transaction boundary.
         created = _make_note()
         with (
             patch.object(
@@ -206,7 +208,7 @@ class TestNoteServiceCreate:
             result = await service.create("Hello")
 
         mock_add.assert_awaited_once()
-        mock_commit.assert_awaited_once()
+        mock_commit.assert_not_awaited()
         assert result is created
 
     async def test_each_note_gets_unique_ap_id(self, service: NoteService) -> None:

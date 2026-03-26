@@ -50,6 +50,19 @@ class SettingsRepository(BaseRepository[Settings]):
         result = await self._session.execute(select(Settings).where(Settings.key == key))
         return result.scalars().first()
 
+    async def get_by_keys(self, keys: list[str]) -> dict[str, str]:
+        """Fetch multiple settings in a single ``WHERE key IN (...)`` query.
+
+        Args:
+            keys: The setting keys to look up.
+
+        Returns:
+            A dictionary mapping each found key to its value.  Keys that
+            do not exist in the database are absent from the result.
+        """
+        result = await self._session.execute(select(Settings).where(Settings.key.in_(keys)))
+        return {row.key: row.value for row in result.scalars().all() if row.value is not None}
+
     async def set_value(self, key: str, value: str | None) -> Settings:
         """Create or update a setting by key.
 

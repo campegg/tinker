@@ -1,6 +1,5 @@
 """Shared test fixtures for Tinker."""
 
-import os
 from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -13,14 +12,14 @@ from app import create_app
 
 
 @pytest.fixture(autouse=True)
-def _test_env(tmp_path: Any) -> None:
+def _test_env(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """Set environment variables for testing."""
     db_path = str(tmp_path / "test.db")
-    os.environ["TINKER_DOMAIN"] = "test.example.com"
-    os.environ["TINKER_DB_PATH"] = db_path
-    os.environ["TINKER_MEDIA_PATH"] = str(tmp_path / "media")
-    os.environ["TINKER_SECRET_KEY"] = "test-secret-key"
-    os.environ["TINKER_USERNAME"] = "testuser"
+    monkeypatch.setenv("TINKER_DOMAIN", "test.example.com")
+    monkeypatch.setenv("TINKER_DB_PATH", db_path)
+    monkeypatch.setenv("TINKER_MEDIA_PATH", str(tmp_path / "media"))
+    monkeypatch.setenv("TINKER_SECRET_KEY", "test-secret-key")
+    monkeypatch.setenv("TINKER_USERNAME", "testuser")
 
 
 @pytest.fixture

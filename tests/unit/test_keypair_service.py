@@ -271,7 +271,7 @@ class TestBuildActorDocument:
             patch(
                 "app.federation.actor.SettingsService.get_avatar",
                 new_callable=AsyncMock,
-                return_value="/media/avatar.jpg",
+                return_value="uploads/avatar.jpg",
             ),
             patch(
                 "app.federation.actor.KeypairService.get_public_key",
@@ -287,7 +287,7 @@ class TestBuildActorDocument:
 
         assert "icon" in doc
         assert doc["icon"]["type"] == "Image"
-        assert doc["icon"]["url"] == "/media/avatar.jpg"
+        assert doc["icon"]["url"] == "https://example.com/media/uploads/avatar.jpg"
 
     async def test_includes_empty_avatar_string_has_no_icon(self) -> None:
         from app.federation.actor import build_actor_document

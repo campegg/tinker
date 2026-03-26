@@ -9,6 +9,7 @@ authentication (the inbox verifies HTTP Signatures instead).
 from __future__ import annotations
 
 import asyncio
+import html as html_mod
 import json
 import logging
 from pathlib import Path
@@ -17,6 +18,7 @@ from urllib.parse import urlparse
 
 from quart import Blueprint, Response, abort, current_app, g, request, send_file
 
+from app.core.config import COLLECTION_PAGE_SIZE, OUTBOX_PAGE_SIZE
 from app.federation.actor import build_actor_document
 from app.federation.inbox import InboxContext, check_inbox_rate_limit, process_activity
 from app.federation.outbox import AP_CONTEXT, build_create_activity, build_note_object
@@ -24,6 +26,7 @@ from app.federation.signatures import extract_key_id, verify_signature
 from app.repositories.follower import FollowerRepository
 from app.repositories.following import FollowingRepository
 from app.repositories.note import NoteRepository
+from app.services.note import NoteService
 from app.services.remote_actor import RemoteActorService
 from app.services.settings import SettingsService
 
@@ -124,8 +127,9 @@ def _wants_json_ld(accept_header: str | None) -> bool:
 def _render_links_html(links: list[str]) -> str:
     """Render a list of URL strings as HTML ``<li>`` elements.
 
-    Each link is wrapped in an ``<a>`` tag with ``rel="noopener noreferrer"``
-    and ``target="_blank"`` for security and UX.
+    Only renders links whose scheme is ``http`` or ``https``.  URLs with
+    unsafe schemes (e.g. ``javascript:``, ``data:``) are silently dropped.
+    Each accepted link is HTML-escaped before injection.
 
     Args:
         links: A list of URL strings.
@@ -136,8 +140,12 @@ def _render_links_html(links: list[str]) -> str:
     """
     parts: list[str] = []
     for url in links:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            continue
+        escaped = html_mod.escape(url, quote=True)
         parts.append(
-            f'<li><a href="{url}" rel="noopener noreferrer" target="_blank">{url}</a></li>'
+            f'<li><a href="{escaped}" rel="noopener noreferrer" target="_blank">{escaped}</a></li>'
         )
     return "\n        ".join(parts)
 
@@ -146,7 +154,7 @@ def _render_profile_html(
     template: str,
     *,
     display_name: str,
-    bio: str,
+    bio_html: str,
     avatar_url: str,
     handle: str,
     links_html: str,
@@ -159,10 +167,16 @@ def _render_profile_html(
     corresponding profile values. This is deliberate simple string
     replacement — not a template engine.
 
+    User-supplied text values (``display_name``, ``handle``, ``avatar_url``,
+    ``domain``, ``actor_uri``) are HTML-escaped before injection.
+    ``bio_html`` is already sanitised rendered HTML and is inserted verbatim.
+    ``links_html`` is pre-rendered by :func:`_render_links_html` which
+    validates URL schemes and escapes all values.
+
     Args:
         template: The raw HTML template string.
-        display_name: The author's display name.
-        bio: The author's biography text.
+        display_name: The author's display name (escaped before injection).
+        bio_html: The author's biography as sanitised rendered HTML.
         avatar_url: The URL to the avatar image, or an empty string.
         handle: The full fediverse handle (e.g. ``@user@domain``).
         links_html: Pre-rendered HTML ``<li>`` elements for profile links.
@@ -173,15 +187,15 @@ def _render_profile_html(
     Returns:
         The fully rendered HTML string ready to serve to the client.
     """
-    html = template
-    html = html.replace("{{display_name}}", display_name)
-    html = html.replace("{{bio}}", bio)
-    html = html.replace("{{avatar_url}}", avatar_url)
-    html = html.replace("{{handle}}", handle)
-    html = html.replace("{{links}}", links_html)
-    html = html.replace("{{domain}}", domain)
-    html = html.replace("{{actor_uri}}", actor_uri)
-    return html
+    result = template
+    result = result.replace("{{display_name}}", html_mod.escape(display_name))
+    result = result.replace("{{bio}}", bio_html)
+    result = result.replace("{{avatar_url}}", html_mod.escape(avatar_url, quote=True))
+    result = result.replace("{{handle}}", html_mod.escape(handle))
+    result = result.replace("{{links}}", links_html)
+    result = result.replace("{{domain}}", html_mod.escape(domain))
+    result = result.replace("{{actor_uri}}", html_mod.escape(actor_uri, quote=True))
+    return result
 
 
 @public.route("/", methods=["GET"])
@@ -236,15 +250,17 @@ async def actor_profile(username: str) -> Response:
     # Browser request — serve the profile HTML page.
     settings = SettingsService(session)
     display_name = await settings.get_display_name()
-    bio = await settings.get_bio()
+    bio_source = await settings.get_bio()
     avatar = await settings.get_avatar()
     links = await settings.get_links()
 
+    bio_html = NoteService.render_markdown(bio_source) if bio_source else ""
+
     template = _load_profile_template()
-    html = _render_profile_html(
+    rendered = _render_profile_html(
         template,
         display_name=display_name,
-        bio=bio,
+        bio_html=bio_html,
         avatar_url=avatar or "",
         handle=f"@{username}@{domain}",
         links_html=_render_links_html(links),
@@ -252,7 +268,7 @@ async def actor_profile(username: str) -> Response:
         actor_uri=f"https://{domain}/{username}",
     )
     return Response(
-        response=html,
+        response=rendered,
         status=200,
         content_type="text/html; charset=utf-8",
         headers={"Vary": "Accept"},
@@ -370,9 +386,6 @@ async def nodeinfo() -> Response:
     )
 
 
-_OUTBOX_PAGE_SIZE = 20
-
-
 @public.route("/notes/<note_id>", methods=["GET"])
 async def note_object(note_id: str) -> Response:
     """Serve the ActivityPub Note object or redirect browsers to home.
@@ -465,7 +478,7 @@ async def outbox(username: str) -> Response:
 
     # Paginated page — first page or a cursor-based subsequent page.
     notes = await note_repo.get_page(
-        limit=_OUTBOX_PAGE_SIZE,
+        limit=OUTBOX_PAGE_SIZE,
         before_ap_id=max_id,  # None → first page; ap_id → subsequent page
     )
 
@@ -489,7 +502,7 @@ async def outbox(username: str) -> Response:
     }
 
     # Include a "next" link when there may be more items beyond this page.
-    if len(notes) == _OUTBOX_PAGE_SIZE:
+    if len(notes) == OUTBOX_PAGE_SIZE:
         oldest = notes[-1]
         page_doc["next"] = f"{outbox_url}?max_id={oldest.ap_id}&page=true"
 
@@ -498,9 +511,6 @@ async def outbox(username: str) -> Response:
         status=200,
         content_type=_AP_CONTENT_TYPE,
     )
-
-
-_COLLECTION_PAGE_SIZE = 50
 
 
 @public.route("/<username>/followers", methods=["GET"])
@@ -532,7 +542,7 @@ async def followers_collection(username: str) -> Response:
 
     if page_param is None:
         total = await repo.count_accepted()
-        last_offset = max(0, ((total - 1) // _COLLECTION_PAGE_SIZE)) + 1
+        last_offset = max(0, ((total - 1) // COLLECTION_PAGE_SIZE)) + 1
         body: dict[str, Any] = {
             "@context": AP_CONTEXT,
             "id": collection_url,
@@ -555,8 +565,8 @@ async def followers_collection(username: str) -> Response:
     if page_num < 1:
         abort(400)
 
-    offset = (page_num - 1) * _COLLECTION_PAGE_SIZE
-    items = await repo.get_accepted(limit=_COLLECTION_PAGE_SIZE, offset=offset)
+    offset = (page_num - 1) * COLLECTION_PAGE_SIZE
+    items = await repo.get_accepted(limit=COLLECTION_PAGE_SIZE, offset=offset)
 
     page_doc: dict[str, Any] = {
         "@context": AP_CONTEXT,
@@ -567,7 +577,7 @@ async def followers_collection(username: str) -> Response:
     }
     if page_num > 1:
         page_doc["prev"] = f"{collection_url}?page={page_num - 1}"
-    if len(items) == _COLLECTION_PAGE_SIZE:
+    if len(items) == COLLECTION_PAGE_SIZE:
         page_doc["next"] = f"{collection_url}?page={page_num + 1}"
 
     return Response(
@@ -606,7 +616,7 @@ async def following_collection(username: str) -> Response:
 
     if page_param is None:
         total = await repo.count_accepted()
-        last_offset = max(0, ((total - 1) // _COLLECTION_PAGE_SIZE)) + 1
+        last_offset = max(0, ((total - 1) // COLLECTION_PAGE_SIZE)) + 1
         body: dict[str, Any] = {
             "@context": AP_CONTEXT,
             "id": collection_url,
@@ -629,8 +639,8 @@ async def following_collection(username: str) -> Response:
     if page_num < 1:
         abort(400)
 
-    offset = (page_num - 1) * _COLLECTION_PAGE_SIZE
-    items = await repo.get_accepted(limit=_COLLECTION_PAGE_SIZE, offset=offset)
+    offset = (page_num - 1) * COLLECTION_PAGE_SIZE
+    items = await repo.get_accepted(limit=COLLECTION_PAGE_SIZE, offset=offset)
 
     page_doc: dict[str, Any] = {
         "@context": AP_CONTEXT,
@@ -641,7 +651,7 @@ async def following_collection(username: str) -> Response:
     }
     if page_num > 1:
         page_doc["prev"] = f"{collection_url}?page={page_num - 1}"
-    if len(items) == _COLLECTION_PAGE_SIZE:
+    if len(items) == COLLECTION_PAGE_SIZE:
         page_doc["next"] = f"{collection_url}?page={page_num + 1}"
 
     return Response(

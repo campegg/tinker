@@ -29,9 +29,8 @@ class ActorProfileModal extends HTMLElement {
             <div class="modal-overlay js-backdrop" hidden aria-modal="true" role="dialog"
                  aria-label="Actor profile">
                 <div class="actor-profile-modal">
-                    <button class="modal-overlay__close js-close" aria-label="Close">&#x2715;</button>
                     <div class="actor-profile-modal__body" id="actor-profile-body">
-                        <div class="actor-profile-modal__loading">Loading…</div>
+                        <div class="actor-profile-modal__loading">Loading\u2026</div>
                     </div>
                 </div>
             </div>`;
@@ -40,8 +39,6 @@ class ActorProfileModal extends HTMLElement {
         overlay?.addEventListener("click", (e) => {
             if (e.target === overlay) this._hide();
         });
-        this.querySelector(".js-close")
-            ?.addEventListener("click", () => this._hide());
     }
 
     async _show(uri) {

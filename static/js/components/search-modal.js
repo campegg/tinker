@@ -29,20 +29,15 @@ class SearchModal extends HTMLElement {
             <div class="modal-overlay js-backdrop" hidden aria-modal="true" role="dialog"
                  aria-label="Search for a Fediverse account">
                 <div class="search-modal">
-                    <button class="modal-overlay__close js-close" aria-label="Close">&#x2715;</button>
-                    <h2 class="search-modal__title">Find a person</h2>
-                    <form class="search-modal__form" id="search-form">
-                        <input
-                            class="search-modal__input"
-                            id="search-input"
-                            type="text"
-                            placeholder="@user@example.social"
-                            autocomplete="off"
-                            autocapitalize="none"
-                            spellcheck="false"
-                        >
-                        <button type="submit" class="search-modal__btn">Search</button>
-                    </form>
+                    <input
+                        class="search-modal__input"
+                        id="search-input"
+                        type="text"
+                        placeholder="Search for..."
+                        autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                    >
                     <div class="search-modal__status" id="search-status" aria-live="polite"></div>
                     <div class="search-modal__results" id="search-results"></div>
                 </div>
@@ -52,10 +47,11 @@ class SearchModal extends HTMLElement {
         overlay?.addEventListener("click", (e) => {
             if (e.target === overlay) this._hide();
         });
-        this.querySelector(".js-close")
-            ?.addEventListener("click", () => this._hide());
-        this.querySelector("#search-form")
-            ?.addEventListener("submit", (e) => { e.preventDefault(); this._search(); });
+
+        this.querySelector("#search-input")
+            ?.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") { e.preventDefault(); this._search(); }
+            });
 
         document.addEventListener("keydown", (e) => {
             if (this.#open && e.key === "Escape") this._hide();

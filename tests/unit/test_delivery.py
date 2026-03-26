@@ -547,7 +547,8 @@ class TestStartupRecovery:
         factory, _session_mock = _make_session_factory()
 
         mock_repo = AsyncMock()
-        mock_repo.get_pending = AsyncMock(return_value=items)
+        mock_repo.get_never_attempted = AsyncMock(return_value=items)
+        mock_repo.get_retryable = AsyncMock(return_value=[])
 
         with (
             patch(
@@ -580,11 +581,34 @@ class TestStartupRecovery:
         for item in items:
             _in_flight.discard(item.id)
 
+    async def test_skips_backoff_delayed_items(self) -> None:
+        """Items with a future next_retry_at are not dispatched on recovery."""
+        # This item has a retry scheduled 10 minutes in the future — it should
+        # not be dispatched because it is still within its backoff window.
+        factory, _ = _make_session_factory()
+        mock_repo = AsyncMock()
+        mock_repo.get_never_attempted = AsyncMock(return_value=[])
+        mock_repo.get_retryable = AsyncMock(return_value=[])
+
+        with patch(
+            "app.federation.delivery.DeliveryQueueRepository",
+            return_value=mock_repo,
+        ):
+            count = await startup_recovery(
+                session_factory=factory,
+                private_key_pem="key",
+                key_id="kid",
+                semaphore=_make_semaphore(),
+            )
+
+        assert count == 0
+
     async def test_returns_zero_when_no_pending_items(self) -> None:
         """Returns 0 when there are no pending deliveries to recover."""
         factory, _ = _make_session_factory()
         mock_repo = AsyncMock()
-        mock_repo.get_pending = AsyncMock(return_value=[])
+        mock_repo.get_never_attempted = AsyncMock(return_value=[])
+        mock_repo.get_retryable = AsyncMock(return_value=[])
 
         with patch(
             "app.federation.delivery.DeliveryQueueRepository",
@@ -603,7 +627,8 @@ class TestStartupRecovery:
         """A database error during recovery is logged, not raised."""
         factory, _ = _make_session_factory()
         mock_repo = AsyncMock()
-        mock_repo.get_pending = AsyncMock(side_effect=RuntimeError("DB error"))
+        mock_repo.get_never_attempted = AsyncMock(side_effect=RuntimeError("DB error"))
+        mock_repo.get_retryable = AsyncMock(return_value=[])
 
         with patch(
             "app.federation.delivery.DeliveryQueueRepository",

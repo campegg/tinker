@@ -47,6 +47,7 @@ import httpx
 from quart import Blueprint, Response, current_app, g, request
 
 from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
+from app.core.config import PAGE_SIZE, USER_AGENT
 from app.federation.actor import build_actor_document
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.follow import send_follow, send_unfollow
@@ -82,6 +83,8 @@ from app.services.settings import SettingsService
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.delivery_queue import DeliveryQueue
 
 api = Blueprint("api", __name__, url_prefix="/admin/api")
 
@@ -120,19 +123,22 @@ def _validate_csrf_header() -> bool:
 async def _get_delivery_context() -> tuple[str, str, str, str]:
     """Return the values needed to sign and dispatch deliveries.
 
-    Loads the private key from the keypair service and derives the
-    actor URI and key ID from app config.
+    Reads the private key from ``app.config`` if already cached there
+    (populated by the startup hook in :mod:`app`), falling back to a live
+    DB query only when the cached values are absent.
 
     Returns:
         A tuple of ``(domain, username, private_key_pem, key_id)``.
     """
-    session: AsyncSession = g.db_session
     domain: str = current_app.config["TINKER_DOMAIN"]
     username: str = current_app.config["TINKER_USERNAME"]
-    keypair_svc = KeypairService(session)
-    private_key_pem = await keypair_svc.get_private_key()
-    key_id = f"https://{domain}/{username}#main-key"
-    return domain, username, private_key_pem, key_id
+    pem: str | None = current_app.config.get("INBOX_PRIVATE_KEY_PEM")
+    key_id_cached: str | None = current_app.config.get("INBOX_KEY_ID")
+    if not pem or not key_id_cached:
+        session: AsyncSession = g.db_session
+        pem = await KeypairService(session).get_private_key()
+        key_id_cached = f"https://{domain}/{username}#main-key"
+    return domain, username, pem, key_id_cached
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +273,6 @@ async def get_csrf_token() -> Response:
 # Timeline
 # ---------------------------------------------------------------------------
 
-_PAGE_SIZE = 50
-
 
 @api.route("/timeline", methods=["GET"])
 @require_auth
@@ -318,7 +322,7 @@ async def get_timeline() -> Response:
     actor_repo = RemoteActorRepository(db)
     settings_svc = SettingsService(db)
 
-    fetch_limit = _PAGE_SIZE * 2  # over-fetch so merge has enough material
+    fetch_limit = PAGE_SIZE * 2  # over-fetch so merge has enough material
 
     if since_dt is not None:
         notes = list(await note_repo.get_since_dt(since_dt, fetch_limit))
@@ -330,7 +334,9 @@ async def get_timeline() -> Response:
         notes = list(await note_repo.get_recent(fetch_limit))
         tl_items = list(await timeline_repo.get_recent(fetch_limit))
 
-    liked_uris = await like_repo.get_liked_uris_by_actor(actor_uri)
+    # Collect all remote post URIs on this page before fetching liked status.
+    remote_post_uris = {item.original_object_uri for item in tl_items if item.original_object_uri}
+    liked_uris = await like_repo.get_liked_uris_for_posts(actor_uri, remote_post_uris)
     display_name = await settings_svc.get_display_name() or username
     raw_avatar = await settings_svc.get_avatar()
     avatar_url = f"/media/{raw_avatar}" if raw_avatar else ""
@@ -391,8 +397,8 @@ async def get_timeline() -> Response:
     # Sort by published timestamp descending; string ISO 8601 sorts correctly.
     unified.sort(key=lambda x: x["published"], reverse=True)
 
-    has_more = len(unified) > _PAGE_SIZE
-    page = unified[:_PAGE_SIZE]
+    has_more = len(unified) > PAGE_SIZE
+    page = unified[:PAGE_SIZE]
     cursor = page[-1]["published"] if page else None
 
     return _json_response({"data": page, "cursor": cursor, "has_more": has_more})
@@ -452,7 +458,11 @@ async def create_note() -> Response:
             attachment = await attachment_repo.get_by_id(aid)
             if attachment is not None and attachment.note_id is None:
                 attachment.note_id = note.id
-        await db.commit()
+
+    # Commit note (and attachments if any) before fan-out so the note row
+    # exists in the DB before background delivery tasks run.
+    await db.commit()
+    if attachment_ids:
         # Reload note so attachments relationship is populated.
         await db.refresh(note)
 
@@ -706,16 +716,18 @@ async def like_post() -> Response:
 
     like = Like(note_uri=post_id, actor_uri=actor_uri, activity_uri=activity_id)
     await like_repo.add(like)
-    await db.commit()
 
     inbox_url = await _find_inbox_for_post(post_id, db)
+    delivery_svc = DeliveryService(db)
+    session_factory = current_app.config["DB_SESSION_FACTORY"]
+    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+    enqueued_item: DeliveryQueue | None = None
     if inbox_url:
-        delivery_svc = DeliveryService(db)
-        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
-        session_factory = current_app.config["DB_SESSION_FACTORY"]
-        semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+        enqueued_item = await delivery_svc.enqueue(activity, inbox_url)
+    await db.commit()
+    if inbox_url and enqueued_item is not None:
         dispatch_new_items(
-            [item],
+            [enqueued_item],
             session_factory=session_factory,
             private_key_pem=private_key_pem,
             key_id=key_id,
@@ -762,16 +774,18 @@ async def unlike_post() -> Response:
     activity = build_undo_like_activity(like_activity_id, post_id, actor_uri, undo_id)
 
     await like_repo.delete(existing)
-    await db.commit()
 
     inbox_url = await _find_inbox_for_post(post_id, db)
+    delivery_svc = DeliveryService(db)
+    session_factory = current_app.config["DB_SESSION_FACTORY"]
+    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+    enqueued_item_unlike: DeliveryQueue | None = None
     if inbox_url:
-        delivery_svc = DeliveryService(db)
-        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
-        session_factory = current_app.config["DB_SESSION_FACTORY"]
-        semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+        enqueued_item_unlike = await delivery_svc.enqueue(activity, inbox_url)
+    await db.commit()
+    if inbox_url and enqueued_item_unlike is not None:
         dispatch_new_items(
-            [item],
+            [enqueued_item_unlike],
             session_factory=session_factory,
             private_key_pem=private_key_pem,
             key_id=key_id,
@@ -825,26 +839,22 @@ async def boost_post() -> Response:
 
     boost = Boost(note_uri=post_id, actor_uri=actor_uri, activity_uri=activity_id)
     await boost_repo.add(boost)
-    await db.commit()
 
     session_factory = current_app.config["DB_SESSION_FACTORY"]
     semaphore = current_app.config["DELIVERY_SEMAPHORE"]
     delivery_svc = DeliveryService(db)
 
     inbox_url = await _find_inbox_for_post(post_id, db)
+    enqueued_boost: DeliveryQueue | None = None
     if inbox_url:
-        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
-        dispatch_new_items(
-            [item],
-            session_factory=session_factory,
-            private_key_pem=private_key_pem,
-            key_id=key_id,
-            semaphore=semaphore,
-        )
+        enqueued_boost = await delivery_svc.enqueue(activity, inbox_url)
 
-    fan_out_items = await delivery_svc.fan_out(activity)
+    fan_out_items = await delivery_svc.fan_out(activity, autocommit=False, exclude_inbox=inbox_url)
+    await db.commit()
+
+    to_dispatch = ([enqueued_boost] if enqueued_boost is not None else []) + fan_out_items
     dispatch_new_items(
-        fan_out_items,
+        to_dispatch,
         session_factory=session_factory,
         private_key_pem=private_key_pem,
         key_id=key_id,
@@ -894,26 +904,22 @@ async def unboost_post() -> Response:
     activity = build_undo_announce_activity(announce_activity_id, post_id, actor_uri, undo_id)
 
     await boost_repo.delete(existing)
-    await db.commit()
 
     session_factory = current_app.config["DB_SESSION_FACTORY"]
     semaphore = current_app.config["DELIVERY_SEMAPHORE"]
     delivery_svc = DeliveryService(db)
 
     inbox_url = await _find_inbox_for_post(post_id, db)
+    enqueued_unboost: DeliveryQueue | None = None
     if inbox_url:
-        item = await delivery_svc.deliver_to_inbox(activity, inbox_url)
-        dispatch_new_items(
-            [item],
-            session_factory=session_factory,
-            private_key_pem=private_key_pem,
-            key_id=key_id,
-            semaphore=semaphore,
-        )
+        enqueued_unboost = await delivery_svc.enqueue(activity, inbox_url)
 
-    fan_out_items = await delivery_svc.fan_out(activity)
+    fan_out_items = await delivery_svc.fan_out(activity, autocommit=False, exclude_inbox=inbox_url)
+    await db.commit()
+
+    to_dispatch = ([enqueued_unboost] if enqueued_unboost is not None else []) + fan_out_items
     dispatch_new_items(
-        fan_out_items,
+        to_dispatch,
         session_factory=session_factory,
         private_key_pem=private_key_pem,
         key_id=key_id,
@@ -961,15 +967,15 @@ async def get_notifications() -> Response:
     actor_repo = RemoteActorRepository(db)
     following_repo = FollowingRepository(db)
 
-    fetch_limit = _PAGE_SIZE + 1  # over-fetch by 1 to detect has_more
+    fetch_limit = PAGE_SIZE + 1  # over-fetch by 1 to detect has_more
 
     if before_dt is not None:
         rows = list(await notif_repo.get_before_dt(before_dt, fetch_limit))
     else:
         rows = list(await notif_repo.get_recent(fetch_limit))
 
-    has_more = len(rows) > _PAGE_SIZE
-    page = rows[:_PAGE_SIZE]
+    has_more = len(rows) > PAGE_SIZE
+    page = rows[:PAGE_SIZE]
 
     # Batch-fetch cached actor data to avoid N+1 avatar lookups.
     actor_uris = list({n.actor_uri for n in page})
@@ -1272,14 +1278,14 @@ async def list_following() -> Response:
     db: AsyncSession = g.db_session
     following_repo = FollowingRepository(db)
 
-    limit = _PAGE_SIZE + 1
+    limit = PAGE_SIZE + 1
     if before_dt is None:
         page = await following_repo.get_accepted(limit=limit, offset=0)
     else:
         page = await following_repo.get_accepted_before(before=before_dt, limit=limit)
 
-    has_more = len(page) > _PAGE_SIZE
-    records = list(page[:_PAGE_SIZE])
+    has_more = len(page) > PAGE_SIZE
+    records = list(page[:PAGE_SIZE])
 
     # Batch-lookup RemoteActor for handles.
     actor_uris = {r.actor_uri for r in records}
@@ -1333,18 +1339,21 @@ async def list_followers() -> Response:
     db: AsyncSession = g.db_session
     follower_repo = FollowerRepository(db)
 
-    limit = _PAGE_SIZE + 1
+    limit = PAGE_SIZE + 1
     if before_dt is None:
         page = await follower_repo.get_accepted(limit=limit, offset=0)
     else:
         page = await follower_repo.get_accepted_before(before=before_dt, limit=limit)
 
-    has_more = len(page) > _PAGE_SIZE
-    records = list(page[:_PAGE_SIZE])
+    has_more = len(page) > PAGE_SIZE
+    records = list(page[:PAGE_SIZE])
 
     actor_uris = {r.actor_uri for r in records}
     remote_repo = RemoteActorRepository(db)
     cached = await remote_repo.get_by_uris(list(actor_uris))
+
+    following_repo = FollowingRepository(db)
+    followed_uris = await following_repo.get_followed_actor_uris()
 
     data = []
     for r in records:
@@ -1357,6 +1366,7 @@ async def list_followers() -> Response:
                 "display_name": r.display_name or r.actor_uri,
                 "handle": handle,
                 "avatar_url": avatar,
+                "is_following": r.actor_uri in followed_uris,
                 "created_at": _to_ap_ts(r.created_at),
             }
         )
@@ -1454,11 +1464,11 @@ async def list_likes() -> Response:
     actor_uri = f"https://{domain}/{username}"
 
     like_repo = LikeRepository(db)
-    limit = _PAGE_SIZE + 1
+    limit = PAGE_SIZE + 1
     likes = await like_repo.get_recent_by_local_actor(actor_uri, limit=limit, before=before_dt)
 
-    has_more = len(likes) > _PAGE_SIZE
-    likes = list(likes[:_PAGE_SIZE])
+    has_more = len(likes) > PAGE_SIZE
+    likes = list(likes[:PAGE_SIZE])
 
     # Batch-lookup timeline items for the liked post URIs.
     note_uris = {lk.note_uri for lk in likes}
@@ -1504,7 +1514,6 @@ async def list_likes() -> Response:
 # ---------------------------------------------------------------------------
 
 _WEBFINGER_TIMEOUT = 10.0
-_USER_AGENT = "Tinker/0.1.0"
 
 
 def _parse_fediverse_handle(q: str) -> tuple[str, str] | None:
@@ -1565,7 +1574,7 @@ async def search_actor() -> Response:
         ) as client:
             resp = await client.get(
                 webfinger_url,
-                headers={"Accept": "application/jrd+json", "User-Agent": _USER_AGENT},
+                headers={"Accept": "application/jrd+json", "User-Agent": USER_AGENT},
             )
             resp.raise_for_status()
             wf_data: dict[str, Any] = resp.json()

@@ -141,6 +141,9 @@ async def check_rate_limit(ip: str) -> bool:
         if len(_login_attempts[ip]) >= _RATE_LIMIT_MAX:
             return False
         _login_attempts[ip].append(now)
+        # Evict IPs whose last attempt has expired to prevent unbounded growth.
+        for evict_ip in [k for k, ts in _login_attempts.items() if not ts or ts[-1] < cutoff]:
+            del _login_attempts[evict_ip]
         return True
 
 

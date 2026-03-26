@@ -355,6 +355,64 @@ Profile editing, social graph management, liked posts, search — all as static 
 
 ---
 
+## WP-19: Code Quality and Correctness Fixes
+
+Addresses bugs, reliability risks, and cleanup opportunities identified in the post-WP-18 code review. No new user-facing features — this package closes correctness gaps and improves long-term maintainability.
+
+### 🔴 Bugs / Correctness
+
+- [ ] **Startup recovery dispatches backoff-delayed items immediately.** `startup_recovery` calls `repo.get_pending()` which returns all `status="pending"` rows regardless of `next_retry_at`. Add `DeliveryQueueRepository.get_never_attempted()` (filters on `next_retry_at IS NULL`) and update `startup_recovery` to dispatch only never-attempted items plus items whose backoff window has already passed (`get_retryable()`). Items still within their backoff window must not be dispatched. (`app/federation/delivery.py`, `app/repositories/delivery_queue.py`)
+
+- [ ] **`like_post` / `unlike_post` / `boost_post` / `unboost_post`: record mutation and delivery queue entry must be committed atomically.** Currently these endpoints commit the local record (Like/Boost create or delete) before calling `deliver_to_inbox`, which issues a second commit. If the first commit succeeds but the second raises, the local state and the queued delivery are inconsistent. Fix: use `delivery_svc.enqueue()` (no commit) instead of `deliver_to_inbox()` (commits internally), then issue a single `await db.commit()` covering both the record change and the queue entry together. (`app/admin/api.py`)
+
+- [ ] **`_handle_like` rolls back the entire session on `IntegrityError`, not just the faulting operation.** The comment claims a savepoint is rolled back, but `await session.rollback()` rolls back the whole transaction, discarding any work done earlier in the same dispatch call. Replace the bare `rollback()` with a nested transaction: `async with session.begin_nested():` around the `add` + `flush`, so only the savepoint is released on conflict and the outer transaction remains intact. (`app/federation/inbox.py`)
+
+- [ ] **`_handle_delete` only removes the first Like for a deleted object URI.** `like_repo.get_by_note_uri()` returns one row; a note can be liked by many remote actors. Add `LikeRepository.delete_by_note_uri(uri)` (bulk DELETE WHERE `note_uri = ?`) and call it in `_handle_delete` instead. (`app/federation/inbox.py`, `app/repositories/like.py`)
+
+- [ ] **Public profile page injects unsanitised user content as raw HTML.** `_render_profile_html` uses `str.replace` to inject `display_name` and `bio` with no escaping; `_render_links_html` interpolates link URLs directly into `href` attributes. A display name containing `<script>` or a link beginning with `javascript:` executes in the browser. Fix: wrap all interpolated text values with `html.escape()`, and validate link URLs against an `https`/`http` scheme allowlist before rendering. (`app/public/routes.py`)
+
+- [ ] **`build_actor_document` embeds the avatar as a relative file path, not a full URL.** `settings.get_avatar()` returns a path relative to the media root (e.g. `uploads/abc.jpg`). The actor document sets `icon.url` to this raw path; remote servers cannot resolve it. Fix: construct the full URL as `https://{domain}/media/{avatar}` before embedding. (`app/federation/actor.py`)
+
+- [ ] **`actor_profile` serves bio as raw Markdown source, not rendered HTML.** `settings.get_bio()` returns the Markdown source string; `_render_profile_html` injects it directly into the page so visitors see raw syntax. Fix: render the bio through `NoteService.render_markdown()` before injection (matching the admin API's `get_profile` behaviour). (`app/public/routes.py`)
+
+- [ ] **`_handle_follow` bypasses `FollowerRepository.add()` via direct `_session` access.** The new-follower branch calls `follower_repo._session.add(follower)` directly, skipping the repository's public `add()` method (which also calls `flush()` and `refresh()`). Replace with `await follower_repo.add(follower)`. (`app/federation/inbox.py`)
+
+### 🟡 Performance / Reliability
+
+- [ ] **`get_liked_uris_by_actor` loads all likes into memory on every timeline render.** The method fetches every Like row for the local actor (unbounded) and returns a set; `get_timeline` uses it for membership tests against 50–100 URI strings. Add `LikeRepository.get_liked_uris_for_posts(actor_uri, post_uris)` that uses an `IN` clause to check only the URIs actually on the current page. Update the `get_timeline` endpoint to collect `post_id` values from the assembled page before calling it. (`app/repositories/like.py`, `app/admin/api.py`)
+
+- [ ] **`_get_delivery_context` hits the keypair table on every mutating API call.** The private key is already cached in `app.config["INBOX_PRIVATE_KEY_PEM"]` and `"INBOX_KEY_ID"` by `_delivery_startup`. Read from config as the primary path; fall back to a DB load only if the config key is absent (e.g. in tests or if the startup hook failed). (`app/admin/api.py`)
+
+- [ ] **`_strip_and_encode` copies all pixel data into a Python list via `list(img.getdata())`.** For large images this allocates millions of Python tuples. Replace `clean.putdata(list(img.getdata()))` with `clean.putdata(img.getdata())` — Pillow's `ImagingCore` sequence is accepted directly without materialising a Python list. (`app/media.py`)
+
+- [ ] **SSE endpoint has no single-consumer guard.** Multiple open tabs split the notification stream; each tab receives an incomplete subset of events. Add a module-level connection flag that rejects a second simultaneous connection with `409 Conflict`. Document that `Last-Event-ID` replay is not supported (reconnections may miss events). (`app/admin/sse.py`)
+
+- [ ] **In-process rate-limit dicts (`_inbox_attempts`, `_login_attempts`) grow without bound.** Entries for IPs that make one request and go quiet are never evicted. Add a periodic sweep inside `check_inbox_rate_limit` and `check_rate_limit` that removes entries whose entire timestamp list falls outside the sliding window. (`app/federation/inbox.py`, `app/admin/auth.py`)
+
+- [ ] **Missing database index on `timeline_items.original_object_uri`.** `get_by_object_uri` and `get_by_actor_type_and_object_uri` both filter on this column, which has no index. Add an Alembic migration that creates the index. (`alembic/versions/`, `app/models/timeline_item.py`)
+
+### 🟢 Cleanup / Improvements
+
+- [ ] **`USER_AGENT` string is defined independently in four modules.** Extract `USER_AGENT = "Tinker/0.1.0"` to a single constant in `app/core/config.py` (or a new `app/core/constants.py`) and import it everywhere it is needed. (`app/federation/inbox.py`, `app/media.py`, `app/admin/api.py`, `app/services/remote_actor.py`)
+
+- [ ] **Actor URI construction is repeated in ~15 places.** `f"https://{domain}/{username}"` is built inline throughout routes, services, and federation modules. Extract a `make_actor_uri(domain, username)` helper to `app/core/config.py` and replace all call sites. (`app/admin/api.py`, `app/public/routes.py`, `app/federation/inbox.py`, `app/federation/follow.py`, et al.)
+
+- [ ] **`SettingsService.get_all_profile()` issues five sequential DB queries.** Add `SettingsRepository.get_by_keys(keys)` (single `WHERE key IN (...)` query) and rework `get_all_profile()` to use it. (`app/repositories/settings.py`, `app/services/settings.py`)
+
+- [ ] **`create_note` commits twice when attachments are present.** `NoteService.create()` commits internally; the route then commits again after linking attachments. Replace the internal `commit()` in `NoteService.create()` with a `flush()` so the caller owns the transaction boundary, then issue one commit covering both the note row and any attachment links. (`app/services/note.py`, `app/admin/api.py`)
+
+- [ ] **`conftest.py` `_test_env` fixture mutates `os.environ` without restoring it.** Environment variables set in the fixture persist across the test process if tests run in a non-standard order. Replace direct `os.environ` assignments with `monkeypatch.setenv()` so pytest restores the original values automatically after each test. (`tests/conftest.py`)
+
+- [ ] **`boost_post` and `unboost_post` deliver the Announce/Undo to the post author's inbox and then fan out to all followers, potentially double-delivering to servers where the author and a follower share a `sharedInbox`.** Add an optional `exclude_inbox` parameter to `DeliveryService.fan_out()` and pass the author's inbox URL to exclude it from the fan-out. (`app/federation/delivery.py`, `app/admin/api.py`)
+
+- [ ] **Add a missing test asserting that `startup_recovery` does not dispatch items still within their backoff window.** The existing suite only verifies that pending items are dispatched; the complementary case is untested. (`tests/unit/test_delivery.py`)
+
+**Produces:** A correctness- and performance-hardened codebase with no regressions, all existing tests still passing, new tests for every fixed bug, `ruff` clean, `mypy` strict clean.
+
+**Depends on:** WP-18 (all prior work packages complete)
+
+---
+
 ## Parallelism
 
 Most packages are sequential due to their dependency chain, but some can proceed concurrently:
@@ -368,7 +426,7 @@ Most packages are sequential due to their dependency chain, but some can proceed
 ```
 WP-01 ─┬→ WP-02 → WP-03 ─┬→ WP-04 → WP-05 → WP-08 → WP-09 → WP-10 → WP-11
         │                │                                    │        │
-        │                ├→ WP-06 → WP-12                     ├→ WP-16 ├→ WP-18
+        │                ├→ WP-06 → WP-12                     ├→ WP-16 ├→ WP-18 → WP-19
         │                │    │                               │        │
         │                │    ├→ WP-13 → WP-14                └→ WP-17 │
         │                │    │           │                            │

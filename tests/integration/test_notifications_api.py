@@ -23,6 +23,7 @@ from quart import Quart
 import app.admin.auth as auth_module
 from app import create_app
 from app.admin.auth import hash_password
+from app.core.config import PAGE_SIZE
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -217,13 +218,13 @@ class TestGetNotifications:
         assert payload["data"][0]["is_following"] is False
 
     async def test_cursor_pagination_first_page(self, application: Quart) -> None:
-        """First page returns 50 items and ``has_more=True`` when 55 exist."""
+        """First page returns PAGE_SIZE items and ``has_more=True`` when PAGE_SIZE+5 exist."""
         from datetime import UTC, datetime, timedelta
 
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
             base_time = datetime(2026, 1, 1, tzinfo=UTC)
-            for i in range(55):
+            for i in range(PAGE_SIZE + 5):
                 _seed_notification(db, created_at=base_time + timedelta(seconds=i))
             await db.commit()
 
@@ -232,7 +233,7 @@ class TestGetNotifications:
             resp = await client.get("/admin/api/notifications")
 
         payload = json.loads(await resp.get_data())
-        assert len(payload["data"]) == 50
+        assert len(payload["data"]) == PAGE_SIZE
         assert payload["has_more"] is True
         assert payload["cursor"] is not None
 
@@ -243,7 +244,7 @@ class TestGetNotifications:
         session_factory = application.config["DB_SESSION_FACTORY"]
         async with session_factory() as db:
             base_time = datetime(2026, 1, 1, tzinfo=UTC)
-            for i in range(55):
+            for i in range(PAGE_SIZE + 5):
                 _seed_notification(db, created_at=base_time + timedelta(seconds=i))
             await db.commit()
 

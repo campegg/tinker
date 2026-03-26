@@ -75,6 +75,7 @@ class TimelineItem(UUIDModel):
         Text,
         nullable=True,
         default=None,
+        index=True,
     )
 
     in_reply_to: Mapped[str | None] = mapped_column(

@@ -322,7 +322,7 @@ class TestActorDocument:
             session = app.config["DB_SESSION_FACTORY"]()
             try:
                 repo = SettingsRepository(session)
-                await repo.set_value("avatar", "/media/avatar.jpg")
+                await repo.set_value("avatar", "uploads/avatar.jpg")
                 await repo.commit()
             finally:
                 await session.close()
@@ -339,7 +339,7 @@ class TestActorDocument:
         data = await response.get_json()
         assert "icon" in data
         assert data["icon"]["type"] == "Image"
-        assert data["icon"]["url"] == "/media/avatar.jpg"
+        assert data["icon"]["url"] == "https://test.example.com/media/uploads/avatar.jpg"
 
     async def test_returns_404_for_wrong_username(self, client: Any) -> None:
         response = await client.get(

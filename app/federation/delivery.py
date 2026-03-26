@@ -160,7 +160,13 @@ class DeliveryService:
         await self._queue_repo.commit()
         return entry
 
-    async def fan_out(self, activity: dict[str, Any]) -> list[DeliveryQueue]:
+    async def fan_out(
+        self,
+        activity: dict[str, Any],
+        *,
+        autocommit: bool = True,
+        exclude_inbox: str | None = None,
+    ) -> list[DeliveryQueue]:
         """Enqueue delivery of an activity to all accepted followers.
 
         Deduplicates by shared inbox URL: multiple followers on the same
@@ -168,10 +174,16 @@ class DeliveryService:
         than one delivery per follower.  Falls back to the personal inbox
         URL for servers without a shared inbox.
 
-        All queue entries are committed in a single transaction.
-
         Args:
             activity: The JSON-LD activity dict to fan out.
+            autocommit: If ``True`` (default), commits all enqueued entries
+                as a single transaction.  Pass ``False`` when the caller
+                manages the transaction boundary (e.g. to include the
+                fan-out and a separate record change in one atomic commit).
+            exclude_inbox: If set, skip this inbox URL during fan-out.
+                Used by boost/unboost endpoints to avoid double-delivering
+                to the post author's inbox when it is also a follower's
+                shared inbox.
 
         Returns:
             A list of created
@@ -184,6 +196,8 @@ class DeliveryService:
         seen: dict[str, None] = {}
         for follower in followers:
             inbox = follower.shared_inbox_url or follower.inbox_url
+            if exclude_inbox and inbox == exclude_inbox:
+                continue
             seen[inbox] = None
 
         entries: list[DeliveryQueue] = []
@@ -191,7 +205,8 @@ class DeliveryService:
             entry = await self.enqueue(activity, inbox_url)
             entries.append(entry)
 
-        await self._queue_repo.commit()
+        if autocommit:
+            await self._queue_repo.commit()
         return entries
 
 
@@ -506,13 +521,16 @@ async def startup_recovery(
     async with session_factory() as session:
         try:
             repo = DeliveryQueueRepository(session)
-            pending = await repo.get_pending()
+            never = await repo.get_never_attempted()
+            retryable = await repo.get_retryable()
+            # Deduplicate by id in case an item somehow appears in both lists.
+            to_dispatch = list({item.id: item for item in (*never, *retryable)}.values())
         except Exception:
             logger.exception("Error fetching pending deliveries during startup recovery")
             return 0
 
     count = 0
-    for item in pending:
+    for item in to_dispatch:
         if _dispatch(
             item,
             session_factory=session_factory,

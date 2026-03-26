@@ -71,7 +71,7 @@ async def build_actor_document(
     if avatar:
         document["icon"] = {
             "type": "Image",
-            "url": avatar,
+            "url": f"https://{domain}/media/{avatar}",
         }
 
     return document

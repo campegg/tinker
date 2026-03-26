@@ -3,9 +3,9 @@
  *
  * On connection:
  *   1. Fetches GET /admin/api/followers (first page).
- *   2. Renders each result as a <person-row> plus a "Remove" button.
- *   3. Remove button sends DELETE /admin/api/followers and removes the row.
- *   4. Shows a "Load more" button if there are additional pages.
+ *   2. Renders each result as a <person-row>; the ``followed`` attribute on
+ *      the row reflects whether the local user follows that actor back.
+ *   3. Shows a "Load more" button if there are additional pages.
  *
  * No attributes. No shadow DOM.
  */
@@ -63,50 +63,18 @@ class FollowersList extends HTMLElement {
             return;
         }
 
-        const frag = document.createDocumentFragment();
-        for (const item of items) {
-            const wrap = document.createElement("div");
-            wrap.className = "followers-list__row";
-            wrap.dataset.actorUri = item.actor_uri;
-            wrap.innerHTML = `
-                <person-row
-                    actor-uri="${_esc(item.actor_uri)}"
-                    name="${_esc(item.display_name || item.actor_uri)}"
-                    handle="${_esc(item.handle || "")}"
-                    avatar="${_esc(item.avatar_url || "")}"
-                ></person-row>
-                <button
-                    class="followers-list__remove-btn"
-                    aria-label="Remove follower"
-                >Remove</button>`;
-            wrap.querySelector(".followers-list__remove-btn")
-                ?.addEventListener("click", () => this._removeFollower(item.actor_uri, wrap));
-            frag.append(wrap);
-        }
+        const html = items.map((item) => `<person-row
+            actor-uri="${_esc(item.actor_uri)}"
+            name="${_esc(item.display_name || item.actor_uri)}"
+            handle="${_esc(item.handle || "")}"
+            avatar="${_esc(item.avatar_url || "")}"
+            ${item.is_following ? "followed" : ""}
+        ></person-row>`).join("");
 
         if (append) {
-            list.append(frag);
+            list.insertAdjacentHTML("beforeend", html);
         } else {
-            list.replaceChildren(frag);
-        }
-    }
-
-    async _removeFollower(actorUri, rowEl) {
-        try {
-            const resp = await fetch("/admin/api/followers", {
-                method: "DELETE",
-                credentials: "same-origin",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRF-Token": window.__TINKER__?.csrf || "",
-                },
-                body: JSON.stringify({ actor_uri: actorUri }),
-            });
-            if (resp.ok) {
-                rowEl.remove();
-            }
-        } catch {
-            // Silent — let the user retry
+            list.innerHTML = html;
         }
     }
 

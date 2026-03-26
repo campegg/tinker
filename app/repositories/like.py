@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
     from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,6 +120,45 @@ class LikeRepository(BaseRepository[Like]):
         stmt = stmt.order_by(Like.created_at.desc()).limit(limit)
         result = await self._session.execute(stmt)
         return result.scalars().all()
+
+    async def delete_by_note_uri(self, note_uri: str) -> None:
+        """Bulk-delete all Like rows for the given note URI.
+
+        Used when processing an incoming ``Delete`` activity to remove all
+        Like records referencing the deleted object.
+
+        Args:
+            note_uri: The ActivityPub URI of the deleted note.
+        """
+        await self._session.execute(delete(Like).where(Like.note_uri == note_uri))
+
+    async def get_liked_uris_for_posts(
+        self,
+        actor_uri: str,
+        post_uris: Collection[str],
+    ) -> set[str]:
+        """Return the subset of ``post_uris`` already liked by ``actor_uri``.
+
+        Issues a single ``WHERE note_uri IN (...)`` query rather than fetching
+        all likes for the actor.  Used to annotate timeline items efficiently
+        when the page size is known.
+
+        Args:
+            actor_uri: The ActivityPub URI of the local actor.
+            post_uris: The candidate post URIs to check.
+
+        Returns:
+            A set of URIs from ``post_uris`` that the actor has liked.
+        """
+        if not post_uris:
+            return set()
+        result = await self._session.execute(
+            select(Like.note_uri).where(
+                Like.actor_uri == actor_uri,
+                Like.note_uri.in_(post_uris),
+            )
+        )
+        return set(result.scalars().all())
 
     async def get_by_activity_uri(self, activity_uri: str) -> Like | None:
         """Fetch a like by its ActivityPub activity URI.

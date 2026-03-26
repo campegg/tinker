@@ -53,6 +53,27 @@ class DeliveryQueueRepository(BaseRepository[DeliveryQueue]):
         )
         return result.scalars().all()
 
+    async def get_never_attempted(self) -> Sequence[DeliveryQueue]:
+        """Return pending items that have never been attempted.
+
+        Returns delivery queue entries with ``"pending"`` status whose
+        ``next_retry_at`` is ``NULL`` — meaning they were enqueued but
+        never dispatched (e.g. the process crashed before the first
+        attempt).  This is used by :func:`startup_recovery` to distinguish
+        brand-new items from items deliberately held back by exponential
+        backoff.
+
+        Returns:
+            A sequence of never-attempted pending delivery queue entries.
+        """
+        result = await self._session.execute(
+            select(DeliveryQueue).where(
+                DeliveryQueue.status == "pending",
+                DeliveryQueue.next_retry_at.is_(None),
+            )
+        )
+        return result.scalars().all()
+
     async def get_retryable(self) -> Sequence[DeliveryQueue]:
         """Fetch pending items whose retry time has arrived.
 
