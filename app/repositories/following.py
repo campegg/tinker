@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +71,27 @@ class FollowingRepository(BaseRepository[Following]):
             .order_by(Following.created_at.desc())
             .limit(limit)
             .offset(offset)
+        )
+        return result.scalars().all()
+
+    async def get_accepted_before(self, before: datetime, limit: int) -> Sequence[Following]:
+        """Fetch accepted following records created before a given timestamp.
+
+        Used for cursor-based pagination of the Following list.
+
+        Args:
+            before: The exclusive upper bound on ``created_at``.
+            limit: Maximum number of records to return.
+
+        Returns:
+            A sequence of accepted following records with
+            ``created_at < before``, ordered newest to oldest.
+        """
+        result = await self._session.execute(
+            select(Following)
+            .where(Following.status == "accepted", Following.created_at < before)
+            .order_by(Following.created_at.desc())
+            .limit(limit)
         )
         return result.scalars().all()
 

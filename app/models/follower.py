@@ -25,6 +25,9 @@ class Follower(UUIDModel):
         display_name: The actor's display name, if known.
         avatar_url: Local path to the proxied avatar image, if available.
         status: Follow relationship state — "pending", "accepted", or "rejected".
+        follow_activity_uri: The ActivityPub ``id`` of the incoming Follow
+            activity, stored to enable sending ``Reject{Follow}`` on removal.
+            ``None`` for legacy records that predate this field.
     """
 
     __tablename__ = "followers"
@@ -35,6 +38,7 @@ class Follower(UUIDModel):
     display_name: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    follow_activity_uri: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
     def __repr__(self) -> str:
         """Return a developer-friendly string representation."""

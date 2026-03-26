@@ -135,6 +135,23 @@ class SettingsService:
         """
         await self.set("avatar", path)
 
+    async def get_header_image(self) -> str | None:
+        """Return the path to the profile header/banner image.
+
+        Returns:
+            The header image file path, or ``None`` if no header image is set.
+        """
+        return await self.get("header_image")
+
+    async def set_header_image(self, path: str | None) -> None:
+        """Update the profile header/banner image path.
+
+        Args:
+            path: The file path to the header image, or ``None`` to
+                remove it.
+        """
+        await self.set("header_image", path)
+
     async def get_links(self) -> list[str]:
         """Return the list of external profile links.
 
@@ -184,12 +201,13 @@ class SettingsService:
 
         Returns:
             A dictionary with keys ``display_name``, ``bio``, ``avatar``,
-            and ``links``.
+            ``header_image``, and ``links``.
         """
         return {
             "display_name": await self.get_display_name(),
             "bio": await self.get_bio(),
             "avatar": await self.get_avatar(),
+            "header_image": await self.get_header_image(),
             "links": await self.get_links(),
         }
 

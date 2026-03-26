@@ -146,6 +146,34 @@ class TimelineItemRepository(BaseRepository[TimelineItem]):
         )
         return result.scalars().first()
 
+    async def get_by_object_uris(
+        self,
+        uris: set[str],
+    ) -> dict[str, TimelineItem]:
+        """Fetch timeline items by a set of object URIs in a single query.
+
+        Used to avoid N+1 queries when rendering the Likes view: given the
+        set of liked post URIs, returns a mapping from URI to TimelineItem
+        for all that are cached in the timeline.
+
+        Args:
+            uris: The set of ``original_object_uri`` values to look up.
+
+        Returns:
+            A dictionary mapping each matched URI to its TimelineItem.
+            URIs with no matching timeline item are absent from the result.
+        """
+        if not uris:
+            return {}
+        result = await self._session.execute(
+            select(TimelineItem).where(TimelineItem.original_object_uri.in_(uris))
+        )
+        return {
+            item.original_object_uri: item
+            for item in result.scalars().all()
+            if item.original_object_uri is not None
+        }
+
     async def get_by_actor_type_and_object_uri(
         self,
         actor_uri: str,

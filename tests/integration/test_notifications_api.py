@@ -249,13 +249,9 @@ class TestGetNotifications:
 
         async with application.test_client() as client:
             await _login(client)
-            first = json.loads(
-                await (await client.get("/admin/api/notifications")).get_data()
-            )
+            first = json.loads(await (await client.get("/admin/api/notifications")).get_data())
             cursor = first["cursor"]
-            resp = await client.get(
-                f"/admin/api/notifications?before={cursor}"
-            )
+            resp = await client.get(f"/admin/api/notifications?before={cursor}")
 
         payload = json.loads(await resp.get_data())
         assert len(payload["data"]) == 5

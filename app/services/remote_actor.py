@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
+import nh3
 
 from app.models.remote_actor import RemoteActor
 from app.repositories.remote_actor import RemoteActorRepository
@@ -297,7 +298,10 @@ class RemoteActorService:
         bio: str | None = None
         raw_summary = doc.get("summary")
         if isinstance(raw_summary, str) and raw_summary:
-            bio = raw_summary
+            # Sanitise with nh3 before storage — the summary field is
+            # arbitrary HTML from a remote server and will be rendered as
+            # innerHTML in the admin profile modal.
+            bio = nh3.clean(raw_summary)
 
         avatar_url: str | None = None
         icon = doc.get("icon")

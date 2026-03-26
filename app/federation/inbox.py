@@ -477,12 +477,16 @@ async def _handle_follow(
     follower_repo = FollowerRepository(session)
     existing = await follower_repo.get_by_actor_uri(actor_uri)
 
+    follow_activity_uri: str | None = activity.get("id") or None
+
     if existing is not None:
         existing.status = "accepted"
         if display_name:
             existing.display_name = display_name
         if local_avatar_url:
             existing.avatar_url = local_avatar_url
+        if follow_activity_uri:
+            existing.follow_activity_uri = follow_activity_uri
         await session.flush()
         follower = existing
     else:
@@ -494,6 +498,7 @@ async def _handle_follow(
             display_name=display_name,
             avatar_url=local_avatar_url,
             status="accepted",
+            follow_activity_uri=follow_activity_uri,
         )
         follower_repo._session.add(follower)
         await session.flush()

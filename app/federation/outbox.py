@@ -320,6 +320,71 @@ def generate_activity_id(actor_uri: str, kind: str) -> str:
     return f"{actor_uri}#{kind}-{uuid.uuid4().hex}"
 
 
+def build_update_person_activity(
+    actor_doc: dict[str, Any],
+    actor_uri: str,
+) -> dict[str, Any]:
+    """Build an ``Update{Person}`` activity to propagate profile changes.
+
+    Used when the local user updates their display name, bio, or avatar so
+    that followers' servers can refresh the cached actor document.
+
+    Args:
+        actor_doc: The full JSON-LD actor document (as built by
+            :func:`app.federation.actor.build_actor_document`).
+        actor_uri: The canonical AP actor URI of the local user.
+
+    Returns:
+        A dictionary representing the ``Update`` activity with the actor
+        document embedded as the ``object`` (``@context`` stripped from
+        the embedded object per AP convention).
+    """
+    now = _to_ap_datetime(datetime.now(UTC))
+    activity_id = generate_activity_id(actor_uri, "update-person")
+    # Strip @context from the embedded object — only the top-level activity
+    # carries the context.
+    actor_obj = {k: v for k, v in actor_doc.items() if k != "@context"}
+    followers_url = f"{actor_uri}/followers"
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Update",
+        "actor": actor_uri,
+        "published": now,
+        "to": [AP_PUBLIC],
+        "cc": [followers_url],
+        "object": actor_obj,
+    }
+
+
+def build_reject_follow_activity(
+    follow_activity_uri: str,
+    actor_uri: str,
+) -> dict[str, Any]:
+    """Build a ``Reject{Follow}`` activity to terminate a follower relationship.
+
+    Sent when the local user removes a follower.  The remote server will
+    remove the follow relationship on its end when it receives this.
+
+    Args:
+        follow_activity_uri: The AP ``id`` of the original ``Follow`` activity
+            being rejected.
+        actor_uri: The canonical AP actor URI of the local user (the rejecter).
+
+    Returns:
+        A dictionary representing the ``Reject`` activity.
+    """
+    activity_id = generate_activity_id(actor_uri, "reject")
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Reject",
+        "actor": actor_uri,
+        "published": _to_ap_datetime(datetime.now(UTC)),
+        "object": follow_activity_uri,
+    }
+
+
 def build_delete_activity(note_ap_id: str, actor_uri: str) -> dict[str, Any]:
     """Build a ``Delete`` activity with a ``Tombstone`` for a deleted note.
 

@@ -316,15 +316,15 @@ Real-time notification push to the admin.
 
 Persistent, browsable notification history — static HTML shell with Web Components fetching from a JSON API.
 
-- [ ] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination; join against `following` table to include `is_following` boolean per actor on each notification item
-- [ ] `<notification-list>` Web Component: fetches notifications JSON, renders the list, handles "load more" pagination
-- [ ] `<notification-item>` Web Component: renders a single notification — composes `<actor-identity>` for the actor header and (on follow notifications) `<follow-button>`; `type` attribute (`follow` / `reply`) controls variant
-- [ ] Follow notification items: include `<follow-button>` (not following back) or Unfollow text link (already following back) actionable inline (§5.5)
-- [ ] Reply notification items: display reply content in a styled container within the notification row, with like/reply/boost action icons (§5.5)
-- [ ] Mark-all-read API endpoint (`POST /admin/api/notifications/mark-all-read`): sets all `read = false` rows to `read = true`
-- [ ] `<notification-list>` calls mark-all-read on init, then dispatches `notifications-read` on `document` to reset `<notification-badge>` (§5.5)
-- [ ] Static HTML shell at `static/admin/notifications.html` that loads the Web Components
-- [ ] Tests for notifications JSON API (auth, response format, pagination), mark-all-read endpoint, `notifications-read` event dispatch, follow-back action, inline reply content
+- [x] Notifications JSON API endpoint (admin-protected): paginated list of notifications from DB (§5.5), cursor-based pagination; join against `following` table to include `is_following` boolean per actor on each notification item
+- [x] `<notification-list>` Web Component: fetches notifications JSON, renders the list, handles "load more" pagination
+- [x] `<notification-item>` Web Component: renders a single notification — composes `<actor-identity>` for the actor header and (on follow notifications) `<follow-button>`; `type` attribute (`follow` / `reply`) controls variant
+- [x] Follow notification items: include `<follow-button>` (not following back) or Unfollow text link (already following back) actionable inline (§5.5)
+- [x] Reply notification items: display reply content in a styled container within the notification row, with like/reply/boost action icons (§5.5)
+- [x] Mark-all-read API endpoint (`POST /admin/api/notifications/mark-all-read`): sets all `read = false` rows to `read = true`
+- [x] `<notification-list>` calls mark-all-read on init, then dispatches `notifications-read` on `document` to reset `<notification-badge>` (§5.5)
+- [x] Static HTML shell at `static/admin/notifications.html` that loads the Web Components
+- [x] Tests for notifications JSON API (auth, response format, pagination), mark-all-read endpoint, `notifications-read` event dispatch, follow-back action, inline reply content
 
 **Produces:** Browsable notification history.
 
@@ -336,18 +336,18 @@ Persistent, browsable notification history — static HTML shell with Web Compon
 
 Profile editing, social graph management, liked posts, search — all as static HTML shells with Web Components backed by JSON API endpoints.
 
-- [ ] **WP-18 composite components** (build before the views that use them):
+- [x] **WP-18 composite components** (build before the views that use them):
   - `<person-row>`: `<actor-identity>` + `<follow-button>` in a single row; used in the Following list, Followers list, and search results
   - `<profile-card>`: `<actor-banner mode="static">` + `<actor-identity>` + bio paragraph + `<follow-button>`; `mode` attribute (`modal` for overlay contexts, `public` for the standalone public profile page)
-- [ ] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, header image, links (§5.6, §8.2); uses `<actor-banner mode="editable">` at the top of the form (click banner or avatar to replace); bio is edited as Markdown source and rendered to HTML (with typographic processing) on save — the rendered HTML is used for the public profile page injection and for the `summary` field in the actor document; own published notes listed below the edit form using `<status-item own>` with Edit and Delete controls
-- [ ] Banner and avatar upload: each handled via `<actor-banner mode="editable">`, uses media upload pipeline from WP-12
-- [ ] **Following view:** static HTML shell + `<following-list>` Web Component + JSON API endpoint; each row rendered as `<person-row>` with Unfollow action
-- [ ] **Followers view:** static HTML shell + `<followers-list>` Web Component + JSON API endpoint; each row rendered as `<person-row>` with Remove action (sends `Reject` or `Block`? — decide and document)
-- [ ] **Likes view:** static HTML shell + `<likes-list>` Web Component + JSON API endpoint returning paginated liked posts; each item rendered as `<status-item>`
-- [ ] **Search modal:** `<search-modal>` Web Component rendered as a modal overlay triggered from the nav search icon button; input field for `@user@domain`, calls JSON API to fetch remote actor via WebFinger; displays `<person-row>` result(s) on match, "no result" message on failure (§5.6)
-- [ ] **Remote actor profile modal:** `<actor-profile-modal>` Web Component — a dark overlay containing a `<profile-card mode="modal">`; triggered by clicking any actor name, handle, or avatar in the admin interface (§5.6)
-- [ ] **"Follow me" link on public profile page:** add to `static/pages/profile.html` as part of this pass if not already done in WP-04
-- [ ] Tests for each JSON API endpoint and view
+- [x] **Profile view:** static HTML shell + Web Components + JSON API for reading and updating display name, bio, avatar, header image, links; uses `<actor-banner mode="editable">` at the top of the form; bio is edited as Markdown source and rendered to HTML on save; fans out `Update{Person}` to all followers on save
+- [x] Banner and avatar upload: each handled via `<actor-banner mode="editable">`, uses media upload pipeline from WP-12
+- [x] **Following view:** static HTML shell + `<following-list>` Web Component + JSON API endpoint; each row rendered as `<person-row>` with Unfollow action
+- [x] **Followers view:** static HTML shell + `<followers-list>` Web Component + JSON API endpoint; each row rendered as `<person-row>` with Remove action (sends `Reject{Follow}` if `follow_activity_uri` stored)
+- [x] **Likes view:** static HTML shell + `<likes-list>` Web Component + JSON API endpoint returning paginated liked posts; each item rendered as `<status-item>`
+- [x] **Search modal:** `<search-modal>` Web Component rendered as a modal overlay triggered from the nav search icon button; input field for `@user@domain`, calls JSON API to fetch remote actor via WebFinger; displays `<person-row>` result on match
+- [x] **Remote actor profile modal:** `<actor-profile-modal>` Web Component — a dark overlay containing a `<profile-card mode="modal">`; triggered by clicking any actor name, handle, or avatar in the admin interface
+- [x] **"Follow me" link on public profile page:** already present at `static/pages/profile.html`
+- [x] Tests for each JSON API endpoint and view
 
 **Produces:** All admin views complete.
 
@@ -367,14 +367,14 @@ Most packages are sequential due to their dependency chain, but some can proceed
 
 ```
 WP-01 ─┬→ WP-02 → WP-03 ─┬→ WP-04 → WP-05 → WP-08 → WP-09 → WP-10 → WP-11
-        │                  │                                       │        │
-        │                  ├→ WP-06 → WP-12                       ├→ WP-16 ├→ WP-18
-        │                  │    │                                  │        │
-        │                  │    ├→ WP-13 → WP-14                  └→ WP-17 │
-        │                  │    │           │                               │
-        │                  │    └→ WP-15 ←──┘                              │
-        │                  │                                               │
-        └→ WP-07           │                                               │
-                           │                                               │
-                           └── WP-12 ──────────────────────────────────────┘
+        │                │                                    │        │
+        │                ├→ WP-06 → WP-12                     ├→ WP-16 ├→ WP-18
+        │                │    │                               │        │
+        │                │    ├→ WP-13 → WP-14                └→ WP-17 │
+        │                │    │           │                            │
+        │                │    └→ WP-15 ←──┘                            │
+        │                │                                             │
+        └→ WP-07         │                                             │
+                         │                                             │
+                         └── WP-12 ────────────────────────────────────┘
 ```

@@ -21,6 +21,18 @@ Endpoint groups:
   unread count, and bulk mark-as-read.
 - **Follow/Unfollow** (``/admin/api/follow``, ``/admin/api/unfollow``):
   send Follow and Undo{Follow} activities to remote actors.
+- **Profile** (``/admin/api/profile``): read and update local user profile
+  settings; PATCH fans out ``Update{Person}`` to all followers.
+- **Social graph** (``/admin/api/following``, ``/admin/api/followers``):
+  paginated lists of accepted follow relationships; DELETE removes a
+  follower (sends ``Reject{Follow}`` when the original Follow activity URI
+  is stored).
+- **Likes list** (``/admin/api/likes``): paginated list of posts the local
+  user has liked, joined with cached timeline content.
+- **Search** (``/admin/api/search``): WebFinger lookup for a remote actor
+  handle (``@user@domain``).
+- **Actor** (``/admin/api/actor``): fetch or refresh a remote actor document
+  for the profile modal.
 """
 
 from __future__ import annotations
@@ -31,9 +43,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import httpx
 from quart import Blueprint, Response, current_app, g, request
 
 from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
+from app.federation.actor import build_actor_document
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.follow import send_follow, send_unfollow
 from app.federation.outbox import (
@@ -41,9 +55,11 @@ from app.federation.outbox import (
     build_create_activity,
     build_delete_activity,
     build_like_activity,
+    build_reject_follow_activity,
     build_undo_announce_activity,
     build_undo_like_activity,
     build_update_activity,
+    build_update_person_activity,
     generate_activity_id,
 )
 from app.media import ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, process_image, save_upload
@@ -51,6 +67,7 @@ from app.models.boost import Boost
 from app.models.like import Like
 from app.models.media_attachment import MediaAttachment
 from app.repositories.boost import BoostRepository
+from app.repositories.follower import FollowerRepository
 from app.repositories.following import FollowingRepository
 from app.repositories.like import LikeRepository
 from app.repositories.media_attachment import MediaAttachmentRepository
@@ -60,6 +77,7 @@ from app.repositories.remote_actor import RemoteActorRepository
 from app.repositories.timeline_item import TimelineItemRepository
 from app.services.keypair import KeypairService
 from app.services.note import NoteService
+from app.services.remote_actor import RemoteActorService
 from app.services.settings import SettingsService
 
 if TYPE_CHECKING:
@@ -963,9 +981,7 @@ async def get_notifications() -> Response:
     data: list[dict[str, Any]] = []
     for n in page:
         cached = cached_actors.get(n.actor_uri)
-        handle = (
-            cached.handle if cached and cached.handle else _derive_handle(n.actor_uri)
-        )
+        handle = cached.handle if cached and cached.handle else _derive_handle(n.actor_uri)
         avatar = (cached.avatar_url or "") if cached else ""
         data.append(
             {
@@ -1099,3 +1115,543 @@ async def unfollow_actor() -> Response:
         username=username,
     )
     return _json_response({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------------
+
+
+@api.route("/profile", methods=["GET"])
+@require_auth
+async def get_profile() -> Response:
+    """Return the local user's current profile settings.
+
+    Returns:
+        ``200`` with profile JSON including ``display_name``, ``bio``
+        (raw Markdown), ``bio_html`` (rendered), ``avatar_url``,
+        ``header_image_url``, and ``links``.
+    """
+    db: AsyncSession = g.db_session
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    username: str = current_app.config["TINKER_USERNAME"]
+    settings = SettingsService(db)
+
+    display_name = await settings.get_display_name()
+    bio = await settings.get_bio()
+    avatar = await settings.get_avatar()
+    header_image = await settings.get_header_image()
+    links = await settings.get_links()
+
+    avatar_url = f"/media/{avatar}" if avatar else ""
+    header_image_url = f"/media/{header_image}" if header_image else ""
+
+    return _json_response(
+        {
+            "display_name": display_name,
+            "bio": bio,
+            "bio_html": NoteService.render_markdown(bio) if bio else "",
+            "avatar_url": avatar_url,
+            "header_image_url": header_image_url,
+            "links": links,
+            "handle": f"@{username}@{domain}",
+        }
+    )
+
+
+@api.route("/profile", methods=["PATCH"])
+@require_auth
+async def update_profile() -> Response:
+    """Update the local user's profile settings.
+
+    Request body (JSON, all fields optional):
+
+    - ``display_name`` (str): The new display name.
+    - ``bio`` (str): New biography as Markdown source.
+    - ``avatar_path`` (str): File path from a prior ``/admin/api/media``
+      upload to use as the avatar.
+    - ``header_image_path`` (str): File path from a prior upload to use as
+      the header/banner image.
+    - ``links`` (list[str]): List of external URL strings.
+
+    After saving, fans out an ``Update{Person}`` activity to all accepted
+    followers so remote servers can refresh the cached actor document.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success.
+        ``400`` on invalid input.  ``403`` on CSRF failure.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    if not payload or not isinstance(payload, dict):
+        return _json_response({"error": "JSON body required."}, status=400)
+
+    db: AsyncSession = g.db_session
+    domain, username, private_key_pem, key_id = await _get_delivery_context()
+    actor_uri = f"https://{domain}/{username}"
+    settings = SettingsService(db)
+
+    if "display_name" in payload:
+        val = payload["display_name"]
+        if not isinstance(val, str):
+            return _json_response({"error": "'display_name' must be a string."}, status=400)
+        await settings.set_display_name(val.strip())
+
+    if "bio" in payload:
+        val = payload["bio"]
+        if not isinstance(val, str):
+            return _json_response({"error": "'bio' must be a string."}, status=400)
+        await settings.set_bio(val)
+
+    if "avatar_path" in payload:
+        val = payload["avatar_path"]
+        if val is not None and not isinstance(val, str):
+            return _json_response({"error": "'avatar_path' must be a string or null."}, status=400)
+        await settings.set_avatar(val if val else None)
+
+    if "header_image_path" in payload:
+        val = payload["header_image_path"]
+        if val is not None and not isinstance(val, str):
+            return _json_response(
+                {"error": "'header_image_path' must be a string or null."}, status=400
+            )
+        await settings.set_header_image(val if val else None)
+
+    if "links" in payload:
+        val = payload["links"]
+        if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+            return _json_response({"error": "'links' must be a list of strings."}, status=400)
+        await settings.set_links(val)
+
+    # Fan-out Update{Person} to all followers so the fediverse stays in sync.
+    actor_doc = await build_actor_document(domain, username, db)
+    activity = build_update_person_activity(actor_doc, actor_uri)
+    delivery_svc = DeliveryService(db)
+    items = await delivery_svc.fan_out(activity)
+    session_factory = current_app.config["DB_SESSION_FACTORY"]
+    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+    dispatch_new_items(
+        items,
+        session_factory=session_factory,
+        private_key_pem=private_key_pem,
+        key_id=key_id,
+        semaphore=semaphore,
+    )
+
+    return _json_response({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Social graph — Following
+# ---------------------------------------------------------------------------
+
+
+@api.route("/following", methods=["GET"])
+@require_auth
+async def list_following() -> Response:
+    """Return a paginated list of accepted following relationships.
+
+    Query params:
+        before (str, optional): ISO 8601 UTC cursor — return records
+            older than this timestamp.
+
+    Returns:
+        ``200`` with ``{"data": [...], "cursor": "...", "has_more": bool}``.
+        ``400`` if ``before`` cannot be parsed.
+    """
+    before_raw = request.args.get("before")
+    before_dt: datetime | None = None
+    if before_raw:
+        try:
+            before_dt = datetime.fromisoformat(before_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return _json_response({"error": "Invalid 'before' parameter."}, status=400)
+
+    db: AsyncSession = g.db_session
+    following_repo = FollowingRepository(db)
+
+    limit = _PAGE_SIZE + 1
+    if before_dt is None:
+        page = await following_repo.get_accepted(limit=limit, offset=0)
+    else:
+        page = await following_repo.get_accepted_before(before=before_dt, limit=limit)
+
+    has_more = len(page) > _PAGE_SIZE
+    records = list(page[:_PAGE_SIZE])
+
+    # Batch-lookup RemoteActor for handles.
+    actor_uris = {r.actor_uri for r in records}
+    remote_repo = RemoteActorRepository(db)
+    cached = await remote_repo.get_by_uris(list(actor_uris))
+
+    data = []
+    for r in records:
+        remote = cached.get(r.actor_uri)
+        handle = remote.handle if remote and remote.handle else _derive_handle(r.actor_uri)
+        avatar = r.avatar_url or ""
+        data.append(
+            {
+                "actor_uri": r.actor_uri,
+                "display_name": r.display_name or r.actor_uri,
+                "handle": handle,
+                "avatar_url": avatar,
+                "created_at": _to_ap_ts(r.created_at),
+            }
+        )
+
+    cursor: str | None = _to_ap_ts(records[-1].created_at) if records else None
+    return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
+
+
+# ---------------------------------------------------------------------------
+# Social graph — Followers
+# ---------------------------------------------------------------------------
+
+
+@api.route("/followers", methods=["GET"])
+@require_auth
+async def list_followers() -> Response:
+    """Return a paginated list of accepted followers.
+
+    Query params:
+        before (str, optional): ISO 8601 UTC cursor.
+
+    Returns:
+        ``200`` with ``{"data": [...], "cursor": "...", "has_more": bool}``.
+        ``400`` if ``before`` cannot be parsed.
+    """
+    before_raw = request.args.get("before")
+    before_dt: datetime | None = None
+    if before_raw:
+        try:
+            before_dt = datetime.fromisoformat(before_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return _json_response({"error": "Invalid 'before' parameter."}, status=400)
+
+    db: AsyncSession = g.db_session
+    follower_repo = FollowerRepository(db)
+
+    limit = _PAGE_SIZE + 1
+    if before_dt is None:
+        page = await follower_repo.get_accepted(limit=limit, offset=0)
+    else:
+        page = await follower_repo.get_accepted_before(before=before_dt, limit=limit)
+
+    has_more = len(page) > _PAGE_SIZE
+    records = list(page[:_PAGE_SIZE])
+
+    actor_uris = {r.actor_uri for r in records}
+    remote_repo = RemoteActorRepository(db)
+    cached = await remote_repo.get_by_uris(list(actor_uris))
+
+    data = []
+    for r in records:
+        remote = cached.get(r.actor_uri)
+        handle = remote.handle if remote and remote.handle else _derive_handle(r.actor_uri)
+        avatar = r.avatar_url or ""
+        data.append(
+            {
+                "actor_uri": r.actor_uri,
+                "display_name": r.display_name or r.actor_uri,
+                "handle": handle,
+                "avatar_url": avatar,
+                "created_at": _to_ap_ts(r.created_at),
+            }
+        )
+
+    cursor: str | None = _to_ap_ts(records[-1].created_at) if records else None
+    return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
+
+
+@api.route("/followers", methods=["DELETE"])
+@require_auth
+async def remove_follower() -> Response:
+    """Remove a follower and optionally send ``Reject{Follow}``.
+
+    Request body (JSON):
+
+    - ``actor_uri`` (str, required): The AP URI of the follower to remove.
+
+    If the follower record has a ``follow_activity_uri``, a
+    ``Reject{Follow}`` activity is delivered to their inbox (best-effort,
+    fire-and-forget) before the record is deleted.  Legacy records without
+    a stored activity URI are deleted silently.
+
+    Returns:
+        ``200`` with ``{"status": "ok"}`` on success.
+        ``400`` on missing input.  ``403`` on CSRF failure.
+        ``404`` if the follower is not found.
+    """
+    if not _validate_csrf_header():
+        return _csrf_error()
+
+    payload = await request.get_json(silent=True)
+    target_uri = _parse_actor_uri(payload)
+    if target_uri is None:
+        return _json_response({"error": "Field 'actor_uri' is required."}, status=400)
+
+    db: AsyncSession = g.db_session
+    follower_repo = FollowerRepository(db)
+    follower = await follower_repo.get_by_actor_uri(target_uri)
+    if follower is None:
+        return _json_response({"error": "Follower not found."}, status=404)
+
+    if follower.follow_activity_uri:
+        domain, username, private_key_pem, key_id = await _get_delivery_context()
+        actor_uri = f"https://{domain}/{username}"
+        activity = build_reject_follow_activity(follower.follow_activity_uri, actor_uri)
+        delivery_svc = DeliveryService(db)
+        inbox = follower.inbox_url
+        item = await delivery_svc.deliver_to_inbox(activity, inbox)
+        session_factory = current_app.config["DB_SESSION_FACTORY"]
+        semaphore = current_app.config["DELIVERY_SEMAPHORE"]
+        dispatch_new_items(
+            [item],
+            session_factory=session_factory,
+            private_key_pem=private_key_pem,
+            key_id=key_id,
+            semaphore=semaphore,
+        )
+
+    await follower_repo.delete(follower)
+    await db.commit()
+    return _json_response({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Likes list
+# ---------------------------------------------------------------------------
+
+
+@api.route("/likes", methods=["GET"])
+@require_auth
+async def list_likes() -> Response:
+    """Return a paginated list of posts the local user has liked.
+
+    Each result item is joined with cached timeline content; liked posts
+    with no local cache entry are silently skipped.
+
+    Query params:
+        before (str, optional): ISO 8601 UTC cursor.
+
+    Returns:
+        ``200`` with ``{"data": [...], "cursor": "...", "has_more": bool}``.
+        ``400`` if ``before`` cannot be parsed.
+    """
+    before_raw = request.args.get("before")
+    before_dt: datetime | None = None
+    if before_raw:
+        try:
+            before_dt = datetime.fromisoformat(before_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return _json_response({"error": "Invalid 'before' parameter."}, status=400)
+
+    db: AsyncSession = g.db_session
+    domain: str = current_app.config["TINKER_DOMAIN"]
+    username: str = current_app.config["TINKER_USERNAME"]
+    actor_uri = f"https://{domain}/{username}"
+
+    like_repo = LikeRepository(db)
+    limit = _PAGE_SIZE + 1
+    likes = await like_repo.get_recent_by_local_actor(actor_uri, limit=limit, before=before_dt)
+
+    has_more = len(likes) > _PAGE_SIZE
+    likes = list(likes[:_PAGE_SIZE])
+
+    # Batch-lookup timeline items for the liked post URIs.
+    note_uris = {lk.note_uri for lk in likes}
+    tl_repo = TimelineItemRepository(db)
+    tl_map = await tl_repo.get_by_object_uris(note_uris)
+
+    # Batch-lookup actor handles.
+    present_actor_uris = {tl_map[lk.note_uri].actor_uri for lk in likes if lk.note_uri in tl_map}
+    remote_repo = RemoteActorRepository(db)
+    cached_actors = await remote_repo.get_by_uris(list(present_actor_uris))
+
+    data = []
+    for lk in likes:
+        item = tl_map.get(lk.note_uri)
+        if item is None:
+            # No cached content — skip.
+            continue
+        cached = cached_actors.get(item.actor_uri)
+        handle = cached.handle if cached and cached.handle else _derive_handle(item.actor_uri)
+        avatar = item.actor_avatar_url or ""
+        name = item.actor_name or item.actor_uri
+        data.append(
+            {
+                "id": str(item.id),
+                "post_id": item.original_object_uri or "",
+                "author_name": name,
+                "author_handle": handle,
+                "author_avatar": avatar,
+                "published": _to_ap_ts(item.received_at),
+                "body_html": item.content_html or "",
+                "media_url": None,
+                "liked": True,
+                "reposted": False,
+            }
+        )
+
+    cursor: str | None = _to_ap_ts(likes[-1].created_at) if likes else None
+    return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
+
+
+# ---------------------------------------------------------------------------
+# Search — remote actor lookup via WebFinger
+# ---------------------------------------------------------------------------
+
+_WEBFINGER_TIMEOUT = 10.0
+_USER_AGENT = "Tinker/0.1.0"
+
+
+def _parse_fediverse_handle(q: str) -> tuple[str, str] | None:
+    """Parse a Fediverse handle into (username, domain).
+
+    Accepts ``@user@domain`` or ``user@domain``.
+
+    Args:
+        q: The raw handle string from the query parameter.
+
+    Returns:
+        A ``(username, domain)`` tuple, or ``None`` if the handle cannot
+        be parsed.
+    """
+    q = q.strip().lstrip("@")
+    if "@" not in q:
+        return None
+    parts = q.split("@", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return parts[0], parts[1]
+
+
+@api.route("/search", methods=["GET"])
+@require_auth
+async def search_actor() -> Response:
+    """Look up a remote actor by Fediverse handle via WebFinger.
+
+    Query params:
+        q (str, required): The handle to look up, e.g. ``@alice@example.com``
+            or ``alice@example.com``.
+
+    Returns:
+        ``200`` with actor JSON on success.
+        ``400`` on missing or unparseable handle.
+        ``404`` if the actor cannot be found via WebFinger.
+    """
+    q = request.args.get("q", "").strip()
+    if not q:
+        return _json_response({"error": "Query parameter 'q' is required."}, status=400)
+
+    parsed = _parse_fediverse_handle(q)
+    if parsed is None:
+        return _json_response(
+            {"error": "Invalid handle — expected @user@domain format."}, status=400
+        )
+    handle_user, handle_domain = parsed
+
+    # 1. WebFinger lookup to resolve the handle to an actor URI.
+    webfinger_url = (
+        f"https://{handle_domain}/.well-known/webfinger"
+        f"?resource=acct:{handle_user}@{handle_domain}"
+    )
+    try:
+        async with httpx.AsyncClient(
+            timeout=_WEBFINGER_TIMEOUT,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(
+                webfinger_url,
+                headers={"Accept": "application/jrd+json", "User-Agent": _USER_AGENT},
+            )
+            resp.raise_for_status()
+            wf_data: dict[str, Any] = resp.json()
+    except (httpx.HTTPStatusError, httpx.RequestError, ValueError):
+        return _json_response({"error": "Actor not found."}, status=404)
+
+    # Extract the AP actor URI from the WebFinger links.
+    actor_uri_wf: str | None = None
+    for link in wf_data.get("links", []):
+        if (
+            isinstance(link, dict)
+            and link.get("rel") == "self"
+            and link.get("type") == "application/activity+json"
+        ):
+            href = link.get("href")
+            if isinstance(href, str) and href:
+                actor_uri_wf = href
+                break
+
+    if actor_uri_wf is None:
+        return _json_response({"error": "Actor not found."}, status=404)
+
+    # 2. Fetch and cache the actor document.
+    db: AsyncSession = g.db_session
+    actor_svc = RemoteActorService(db)
+    actor = await actor_svc.get_by_uri(actor_uri_wf)
+    if actor is None:
+        return _json_response({"error": "Actor not found."}, status=404)
+
+    following_repo = FollowingRepository(db)
+    following = await following_repo.get_by_actor_uri(actor.uri)
+    is_following = following is not None and following.status in ("pending", "accepted")
+
+    return _json_response(
+        {
+            "uri": actor.uri,
+            "display_name": actor.display_name or actor.uri,
+            "handle": actor.handle or _derive_handle(actor.uri),
+            "avatar_url": actor.avatar_url or "",
+            "header_image_url": actor.header_image_url or "",
+            "bio": actor.bio or "",
+            "is_following": is_following,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Actor detail — for the remote actor profile modal
+# ---------------------------------------------------------------------------
+
+
+@api.route("/actor", methods=["GET"])
+@require_auth
+async def get_actor() -> Response:
+    """Fetch or refresh a remote actor document for the profile modal.
+
+    Query params:
+        uri (str, required): The canonical AP URI of the remote actor.
+
+    Returns:
+        ``200`` with actor JSON on success.
+        ``400`` on missing URI.
+        ``404`` if the actor cannot be fetched.
+    """
+    uri = request.args.get("uri", "").strip()
+    if not uri:
+        return _json_response({"error": "Query parameter 'uri' is required."}, status=400)
+
+    db: AsyncSession = g.db_session
+    actor_svc = RemoteActorService(db)
+    actor = await actor_svc.get_by_uri(uri)
+    if actor is None:
+        return _json_response({"error": "Actor not found."}, status=404)
+
+    following_repo = FollowingRepository(db)
+    following = await following_repo.get_by_actor_uri(actor.uri)
+    is_following = following is not None and following.status in ("pending", "accepted")
+
+    return _json_response(
+        {
+            "uri": actor.uri,
+            "display_name": actor.display_name or actor.uri,
+            "handle": actor.handle or _derive_handle(actor.uri),
+            "avatar_url": actor.avatar_url or "",
+            "header_image_url": actor.header_image_url or "",
+            "bio": actor.bio or "",
+            "is_following": is_following,
+        }
+    )

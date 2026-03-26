@@ -282,6 +282,7 @@ class TestGetAllProfile:
             "display_name": "Alice",
             "bio": "Hello",
             "avatar": "/img/avatar.jpg",
+            "header_image": None,
             "links": ["https://example.com"],
         }
 
@@ -293,6 +294,7 @@ class TestGetAllProfile:
             "display_name": "",
             "bio": "",
             "avatar": None,
+            "header_image": None,
             "links": [],
         }
 

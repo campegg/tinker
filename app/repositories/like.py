@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -92,6 +93,33 @@ class LikeRepository(BaseRepository[Like]):
         )
         rows: Sequence[str] = result.scalars().all()
         return set(rows)
+
+    async def get_recent_by_local_actor(
+        self,
+        actor_uri: str,
+        limit: int,
+        before: datetime | None = None,
+    ) -> Sequence[Like]:
+        """Fetch paginated likes made by the local actor.
+
+        Used to build the Likes view: returns Like records for the given
+        actor ordered newest-first, with optional cursor-based pagination.
+
+        Args:
+            actor_uri: The AP URI of the local actor whose likes to fetch.
+            limit: Maximum number of records to return.
+            before: If provided, only return likes with ``created_at``
+                strictly before this timestamp (cursor pagination).
+
+        Returns:
+            A sequence of Like records ordered from newest to oldest.
+        """
+        stmt = select(Like).where(Like.actor_uri == actor_uri)
+        if before is not None:
+            stmt = stmt.where(Like.created_at < before)
+        stmt = stmt.order_by(Like.created_at.desc()).limit(limit)
+        result = await self._session.execute(stmt)
+        return result.scalars().all()
 
     async def get_by_activity_uri(self, activity_uri: str) -> Like | None:
         """Fetch a like by its ActivityPub activity URI.

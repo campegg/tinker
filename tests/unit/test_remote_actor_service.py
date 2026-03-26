@@ -629,3 +629,37 @@ class TestParseActorDocument:
         }
         result = RemoteActorService._parse_actor_document(doc)
         assert result["header_image_url"] is None
+
+    def test_bio_script_tags_are_stripped_by_sanitisation(self) -> None:
+        """Malicious script tags in a remote actor's summary are stripped by nh3."""
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/evil",
+            "inbox": "https://example.com/users/evil/inbox",
+            "summary": '<p>Hello</p><script>alert("xss")</script>',
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        bio = result["bio"]
+        assert bio is not None
+        assert "<script>" not in bio
+        assert "alert" not in bio
+        assert "<p>Hello</p>" in bio
+
+    def test_bio_dangerous_attributes_are_stripped_by_sanitisation(self) -> None:
+        """Event handler attributes in a remote actor's summary are stripped by nh3."""
+        doc: dict[str, object] = {
+            "id": "https://example.com/users/evil",
+            "inbox": "https://example.com/users/evil/inbox",
+            "summary": '<p onmouseover="alert(1)">Hover me</p>',
+            "publicKey": {
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nK\n-----END PUBLIC KEY-----",
+            },
+        }
+        result = RemoteActorService._parse_actor_document(doc)
+        bio = result["bio"]
+        assert bio is not None
+        assert "onmouseover" not in bio
+        assert "alert" not in bio
+        assert "Hover me" in bio
