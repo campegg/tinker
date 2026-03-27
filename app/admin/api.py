@@ -47,7 +47,7 @@ import httpx
 from quart import Blueprint, Response, current_app, g, request
 
 from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
-from app.core.config import PAGE_SIZE, USER_AGENT
+from app.core.config import PAGE_SIZE, USER_AGENT, make_actor_uri
 from app.federation.actor import build_actor_document
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.follow import send_follow, send_unfollow
@@ -297,7 +297,7 @@ async def get_timeline() -> Response:
     db: AsyncSession = g.db_session
     domain: str = current_app.config["TINKER_DOMAIN"]
     username: str = current_app.config["TINKER_USERNAME"]
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     actor_handle = f"@{username}@{domain}"
 
     since_str = request.args.get("since")
@@ -442,7 +442,7 @@ async def create_note() -> Response:
 
     db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     note_svc = NoteService(db, domain, username)
     note = await note_svc.create(payload["body"].strip(), in_reply_to=in_reply_to)
@@ -517,7 +517,7 @@ async def edit_note(note_id: str) -> Response:
 
     session: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     note_svc = NoteService(session, domain, username)
     note = await note_svc.get_by_id(note_uuid)
@@ -565,7 +565,7 @@ async def delete_note(note_id: str) -> Response:
 
     session: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     note_svc = NoteService(session, domain, username)
     note = await note_svc.get_by_id(note_uuid)
@@ -705,7 +705,7 @@ async def like_post() -> Response:
         return _json_response({"error": "Field 'post_id' is required."}, status=400)
     db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     like_repo = LikeRepository(db)
     if await like_repo.get_by_note_and_actor(post_id, actor_uri):
@@ -762,7 +762,7 @@ async def unlike_post() -> Response:
         return _json_response({"error": "Field 'post_id' is required."}, status=400)
     db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     like_repo = LikeRepository(db)
     existing = await like_repo.get_by_note_and_actor(post_id, actor_uri)
@@ -828,7 +828,7 @@ async def boost_post() -> Response:
         return _json_response({"error": "Field 'post_id' is required."}, status=400)
     db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     boost_repo = BoostRepository(db)
     if await boost_repo.get_by_note_and_actor(post_id, actor_uri):
@@ -892,7 +892,7 @@ async def unboost_post() -> Response:
         return _json_response({"error": "Field 'post_id' is required."}, status=400)
     db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     boost_repo = BoostRepository(db)
     existing = await boost_repo.get_by_note_and_actor(post_id, actor_uri)
@@ -1196,7 +1196,7 @@ async def update_profile() -> Response:
 
     db: AsyncSession = g.db_session
     domain, username, private_key_pem, key_id = await _get_delivery_context()
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     settings = SettingsService(db)
 
     if "display_name" in payload:
@@ -1410,7 +1410,7 @@ async def remove_follower() -> Response:
 
     if follower.follow_activity_uri:
         domain, username, private_key_pem, key_id = await _get_delivery_context()
-        actor_uri = f"https://{domain}/{username}"
+        actor_uri = make_actor_uri(domain, username)
         activity = build_reject_follow_activity(follower.follow_activity_uri, actor_uri)
         delivery_svc = DeliveryService(db)
         inbox = follower.inbox_url
@@ -1461,7 +1461,7 @@ async def list_likes() -> Response:
     db: AsyncSession = g.db_session
     domain: str = current_app.config["TINKER_DOMAIN"]
     username: str = current_app.config["TINKER_USERNAME"]
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
 
     like_repo = LikeRepository(db)
     limit = PAGE_SIZE + 1

@@ -38,7 +38,7 @@ from urllib.parse import urlparse
 import httpx
 import nh3
 
-from app.core.config import USER_AGENT
+from app.core.config import USER_AGENT, make_actor_uri
 from app.models.follower import Follower
 from app.models.like import Like
 from app.models.notification import Notification
@@ -442,7 +442,7 @@ async def _handle_follow(
         return
 
     # The object being followed must be our local actor.
-    local_actor_uri = f"https://{ctx.domain}/{ctx.username}"
+    local_actor_uri = make_actor_uri(ctx.domain, ctx.username)
     follow_object = activity.get("object")
     if follow_object != local_actor_uri:
         logger.warning(

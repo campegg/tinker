@@ -49,17 +49,12 @@ async def auth_app(tmp_path: Any) -> AsyncGenerator[Quart, None]:
     async with application.test_app():
         # Seed the admin password hash directly via the settings service so
         # tests are independent of the env-var seeding path.
-        from sqlalchemy.ext.asyncio import AsyncSession
-
         session_factory = application.config["DB_SESSION_FACTORY"]
-        db: AsyncSession = session_factory()
-        try:
+        async with session_factory() as db:
             from app.services.settings import SettingsService
 
             svc = SettingsService(db)
             await svc.set_admin_password_hash(hash_password("correct-password"))
-        finally:
-            await db.close()
 
         yield application
 

@@ -6,7 +6,7 @@ import logging
 
 from quart import Quart, g
 
-from app.core.config import load_config
+from app.core.config import load_config, make_actor_uri
 from app.core.database import close_engine, get_session_factory, init_engine
 from app.public.routes import public
 
@@ -130,7 +130,7 @@ def create_app() -> Quart:
                 logger.exception("Failed to load keypair during delivery startup; skipping")
                 return
 
-        key_id = f"https://{domain}/{username}#main-key"
+        key_id = f"{make_actor_uri(domain, username)}#main-key"
 
         # Expose the private key and key_id in app config so that the inbox
         # endpoint can sign Accept{Follow} deliveries without reloading the

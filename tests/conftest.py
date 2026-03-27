@@ -1,5 +1,6 @@
 """Shared test fixtures for Tinker."""
 
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -9,6 +10,14 @@ from quart import Quart
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import create_app
+
+# Silence SQLAlchemy's pool logger at ERROR level.  When aiosqlite connections
+# are GC'd after the per-test event loop closes, SQLAlchemy calls both
+# util.warn() (handled by pytest's filterwarnings) *and* pool.logger.error()
+# (bypasses filterwarnings, writes directly to stderr).  Raising the logger's
+# effective level to CRITICAL suppresses the pool error path without affecting
+# any other SQLAlchemy diagnostics.
+logging.getLogger("sqlalchemy.pool").setLevel(logging.CRITICAL)
 
 
 @pytest.fixture(autouse=True)

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from app.core.config import make_actor_uri
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.outbox import AP_CONTEXT
 from app.models.following import Following
@@ -162,7 +163,7 @@ async def send_follow(
         ValueError: If the remote actor cannot be fetched and no inbox URL
             is available.
     """
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     following_repo = FollowingRepository(session)
 
     # Idempotency: return existing record if follow is already in progress.
@@ -252,7 +253,7 @@ async def send_unfollow(
         domain: The local instance domain.
         username: The local actor username.
     """
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     following_repo = FollowingRepository(session)
 
     following = await following_repo.get_by_actor_uri(target_actor_uri)

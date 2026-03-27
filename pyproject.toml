@@ -94,7 +94,12 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     # aiosqlite connections are GC'd during test teardown before the pool
     # can check them back in — harmless in tests, not reproducible in production.
-    "ignore::sqlalchemy.exc.SAWarning",
+    # SQLAlchemy emits this diagnostic on two independent paths:
+    #   1. util.warn() → SAWarning (handled by the filterwarnings entry below).
+    #   2. pool.logger.error() → Python logging system (cannot be suppressed via
+    #      filterwarnings; silenced instead by raising the sqlalchemy.pool logger's
+    #      minimum level to CRITICAL at the bottom of tests/conftest.py).
+    "ignore:.*non-checked-in connection.*:sqlalchemy.exc.SAWarning",
     # aiosqlite runs SQLite operations in a background thread and signals
     # completion back to the asyncio event loop via call_soon_threadsafe.
     # When a per-test event loop closes before the thread finishes signalling

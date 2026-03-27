@@ -462,6 +462,51 @@ class TestProfileHTMLPage:
         )
         assert response.status_code == 404
 
+    async def test_html_escapes_display_name_xss(self, client: Any, app: Quart) -> None:
+        """display_name containing HTML tags must be escaped, not injected raw."""
+        async with app.app_context():
+            session = app.config["DB_SESSION_FACTORY"]()
+            try:
+                from app.repositories.settings import SettingsRepository
+
+                repo = SettingsRepository(session)
+                await repo.set_value("display_name", "<script>alert(1)</script>")
+                await repo.commit()
+            finally:
+                await session.close()
+
+        response = await client.get(
+            "/testuser",
+            headers={"Accept": "text/html"},
+        )
+        body = await response.get_data(as_text=True)
+        assert "<script>alert(1)</script>" not in body
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+
+    async def test_html_drops_javascript_scheme_links(self, client: Any, app: Quart) -> None:
+        """Links with a javascript: scheme must be dropped; safe https: links must survive."""
+        async with app.app_context():
+            session = app.config["DB_SESSION_FACTORY"]()
+            try:
+                from app.repositories.settings import SettingsRepository
+
+                repo = SettingsRepository(session)
+                await repo.set_value(
+                    "links",
+                    json.dumps(["javascript:alert(1)", "https://safe.example.com"]),
+                )
+                await repo.commit()
+            finally:
+                await session.close()
+
+        response = await client.get(
+            "/testuser",
+            headers={"Accept": "text/html"},
+        )
+        body = await response.get_data(as_text=True)
+        assert "javascript:" not in body
+        assert "https://safe.example.com" in body
+
 
 # ---------------------------------------------------------------------------
 # Content negotiation

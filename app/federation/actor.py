@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.core.config import make_actor_uri
 from app.services.keypair import KeypairService
 from app.services.settings import SettingsService
 
@@ -44,7 +45,7 @@ async def build_actor_document(
     avatar = await settings.get_avatar()
     public_key_pem = await keypair.get_public_key()
 
-    actor_id = f"https://{domain}/{username}"
+    actor_id = make_actor_uri(domain, username)
 
     document: dict[str, Any] = {
         "@context": [

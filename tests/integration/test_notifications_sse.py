@@ -167,3 +167,18 @@ class TestNotificationEvents:
         # The stream must contain the retry directive and the data frame.
         assert "retry: 3000" in raw
         assert f"data: {json.dumps(event_payload, ensure_ascii=False)}" in raw
+
+    async def test_second_connection_returns_409(
+        self, application: Quart, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A second SSE connection while one is already open returns 409 Conflict."""
+        import app.admin.sse as sse_module
+
+        # Simulate an already-open SSE connection by setting the guard flag.
+        monkeypatch.setattr(sse_module, "_sse_connected", True)
+
+        async with application.test_client() as client:
+            await _login(client)
+            resp = await client.get("/admin/api/notifications/events")
+
+        assert resp.status_code == 409

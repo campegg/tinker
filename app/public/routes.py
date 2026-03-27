@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 from quart import Blueprint, Response, abort, current_app, g, request, send_file
 
-from app.core.config import COLLECTION_PAGE_SIZE, OUTBOX_PAGE_SIZE
+from app.core.config import COLLECTION_PAGE_SIZE, OUTBOX_PAGE_SIZE, make_actor_uri
 from app.federation.actor import build_actor_document
 from app.federation.inbox import InboxContext, check_inbox_rate_limit, process_activity
 from app.federation.outbox import AP_CONTEXT, build_create_activity, build_note_object
@@ -265,7 +265,7 @@ async def actor_profile(username: str) -> Response:
         handle=f"@{username}@{domain}",
         links_html=_render_links_html(links),
         domain=domain,
-        actor_uri=f"https://{domain}/{username}",
+        actor_uri=make_actor_uri(domain, username),
     )
     return Response(
         response=rendered,
@@ -297,7 +297,7 @@ async def webfinger() -> Response:
     if resource != expected_resource:
         abort(404)
 
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     body: dict[str, Any] = {
         "subject": expected_resource,
         "aliases": [actor_uri],
@@ -419,7 +419,7 @@ async def note_object(note_id: str) -> Response:
             headers={"Location": "/"},
         )
 
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     note_doc = build_note_object(note, actor_uri)
     note_doc["@context"] = AP_CONTEXT
 
@@ -450,7 +450,7 @@ async def outbox(username: str) -> Response:
         abort(404)
 
     domain: str = current_app.config["TINKER_DOMAIN"]
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     outbox_url = f"{actor_uri}/outbox"
 
     session: AsyncSession = g.db_session
@@ -532,7 +532,7 @@ async def followers_collection(username: str) -> Response:
         abort(404)
 
     domain: str = current_app.config["TINKER_DOMAIN"]
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     collection_url = f"{actor_uri}/followers"
 
     session: AsyncSession = g.db_session
@@ -606,7 +606,7 @@ async def following_collection(username: str) -> Response:
         abort(404)
 
     domain: str = current_app.config["TINKER_DOMAIN"]
-    actor_uri = f"https://{domain}/{username}"
+    actor_uri = make_actor_uri(domain, username)
     collection_url = f"{actor_uri}/following"
 
     session: AsyncSession = g.db_session
