@@ -109,7 +109,7 @@ class TestNoteEndpoint:
         ]
         assert data["type"] == "Note"
         assert data["id"] == f"https://test.example.com/notes/{note_id}"
-        assert data["attributedTo"] == "https://test.example.com/testuser"
+        assert data["attributedTo"] == "https://test.example.com/users/testuser"
         assert "content" in data
         assert "published" in data
 
@@ -160,7 +160,7 @@ class TestNoteEndpoint:
 class TestOutboxCollection:
     async def test_root_returns_ordered_collection(self, client: Any) -> None:
         response = await client.get(
-            "/testuser/outbox",
+            "/users/testuser/outbox",
             headers={"Accept": "application/activity+json"},
         )
         assert response.status_code == 200
@@ -170,7 +170,7 @@ class TestOutboxCollection:
         assert data["type"] == "OrderedCollection"
 
     async def test_root_has_context(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox")
+        response = await client.get("/users/testuser/outbox")
         data = await response.get_json()
         assert data["@context"] == [
             "https://www.w3.org/ns/activitystreams",
@@ -178,13 +178,13 @@ class TestOutboxCollection:
         ]
 
     async def test_root_has_total_items(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox")
+        response = await client.get("/users/testuser/outbox")
         data = await response.get_json()
         assert "totalItems" in data
         assert isinstance(data["totalItems"], int)
 
     async def test_root_reports_zero_posts_initially(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox")
+        response = await client.get("/users/testuser/outbox")
         data = await response.get_json()
         assert data["totalItems"] == 0
 
@@ -192,32 +192,32 @@ class TestOutboxCollection:
         await _create_note(app, body="First note")
         await _create_note(app, body="Second note")
 
-        response = await client.get("/testuser/outbox")
+        response = await client.get("/users/testuser/outbox")
         data = await response.get_json()
         assert data["totalItems"] == 2
 
     async def test_root_has_first_link(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox")
+        response = await client.get("/users/testuser/outbox")
         data = await response.get_json()
         assert "first" in data
         assert data["first"].endswith("?page=true")
 
     async def test_root_has_canonical_id(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox")
+        response = await client.get("/users/testuser/outbox")
         data = await response.get_json()
-        assert data["id"] == "https://test.example.com/testuser/outbox"
+        assert data["id"] == "https://test.example.com/users/testuser/outbox"
 
     async def test_wrong_username_returns_404(self, client: Any) -> None:
-        response = await client.get("/nobody/outbox")
+        response = await client.get("/users/nobody/outbox")
         assert response.status_code == 404
 
     async def test_page_returns_ordered_collection_page(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         assert data["type"] == "OrderedCollectionPage"
 
     async def test_page_has_context(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         assert data["@context"] == [
             "https://www.w3.org/ns/activitystreams",
@@ -225,24 +225,24 @@ class TestOutboxCollection:
         ]
 
     async def test_page_has_part_of_link(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
-        assert data["partOf"] == "https://test.example.com/testuser/outbox"
+        assert data["partOf"] == "https://test.example.com/users/testuser/outbox"
 
     async def test_empty_outbox_page_has_no_items(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         assert data["orderedItems"] == []
 
     async def test_empty_outbox_page_has_no_next_link(self, client: Any) -> None:
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         assert "next" not in data
 
     async def test_page_includes_create_activities(self, client: Any, app: Any) -> None:
         await _create_note(app, body="A note")
 
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
 
         assert len(data["orderedItems"]) == 1
@@ -252,7 +252,7 @@ class TestOutboxCollection:
     async def test_activity_items_have_no_nested_context(self, client: Any, app: Any) -> None:
         await _create_note(app, body="A note")
 
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         item = data["orderedItems"][0]
         assert "@context" not in item
@@ -260,7 +260,7 @@ class TestOutboxCollection:
     async def test_create_activity_has_embedded_note(self, client: Any, app: Any) -> None:
         await _create_note(app, body="Hello **world**")
 
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         item = data["orderedItems"][0]
 
@@ -272,7 +272,7 @@ class TestOutboxCollection:
         await _create_note(app, body="First note")
         await _create_note(app, body="Second note")
 
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
 
         items = data["orderedItems"]
@@ -286,7 +286,7 @@ class TestOutboxCollection:
         for i in range(OUTBOX_PAGE_SIZE - 5):
             await _create_note(app, body=f"Note {i}")
 
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         assert "next" not in data
 
@@ -295,7 +295,7 @@ class TestOutboxCollection:
         for i in range(OUTBOX_PAGE_SIZE):
             await _create_note(app, body=f"Note {i}")
 
-        response = await client.get("/testuser/outbox?page=true")
+        response = await client.get("/users/testuser/outbox?page=true")
         data = await response.get_json()
         assert "next" in data
         assert "max_id=" in data["next"]
@@ -307,7 +307,7 @@ class TestOutboxCollection:
             await _create_note(app, body=f"Note {i:02d}")
 
         # Fetch the first page and extract the "next" cursor.
-        first_response = await client.get("/testuser/outbox?page=true")
+        first_response = await client.get("/users/testuser/outbox?page=true")
         first_data = await first_response.get_json()
         assert "next" in first_data
 
@@ -326,7 +326,7 @@ class TestOutboxCollection:
         await _create_note(app, body="A note")
 
         response = await client.get(
-            "/testuser/outbox?max_id=https://test.example.com/notes/nonexistent&page=true"
+            "/users/testuser/outbox?max_id=https://test.example.com/notes/nonexistent&page=true"
         )
         data = await response.get_json()
         assert data["orderedItems"] == []

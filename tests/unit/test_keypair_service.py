@@ -168,15 +168,15 @@ class TestBuildActorDocument:
             "https://w3id.org/security/v1",
         ]
         assert doc["type"] == "Person"
-        assert doc["id"] == "https://example.com/alice"
+        assert doc["id"] == "https://example.com/users/alice"
         assert doc["preferredUsername"] == "alice"
         assert doc["name"] == "Alice"
         assert doc["summary"] == "A tester"
-        assert doc["inbox"] == "https://example.com/alice/inbox"
-        assert doc["outbox"] == "https://example.com/alice/outbox"
-        assert doc["followers"] == "https://example.com/alice/followers"
-        assert doc["following"] == "https://example.com/alice/following"
-        assert doc["url"] == "https://example.com/alice"
+        assert doc["inbox"] == "https://example.com/users/alice/inbox"
+        assert doc["outbox"] == "https://example.com/users/alice/outbox"
+        assert doc["followers"] == "https://example.com/users/alice/followers"
+        assert doc["following"] == "https://example.com/users/alice/following"
+        assert doc["url"] == "https://example.com/users/alice"
 
     async def test_includes_public_key(self) -> None:
         from app.federation.actor import build_actor_document
@@ -213,8 +213,8 @@ class TestBuildActorDocument:
             )
 
         pk = doc["publicKey"]
-        assert pk["id"] == "https://example.com/bob#main-key"
-        assert pk["owner"] == "https://example.com/bob"
+        assert pk["id"] == "https://example.com/users/bob#main-key"
+        assert pk["owner"] == "https://example.com/users/bob"
         assert pk["publicKeyPem"] == fake_pub
 
     async def test_omits_icon_when_no_avatar(self) -> None:

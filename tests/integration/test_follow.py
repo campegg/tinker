@@ -46,7 +46,7 @@ REMOTE_ACTOR_URI = "https://remote.example.com/users/bob"
 REMOTE_INBOX_URL = f"{REMOTE_ACTOR_URI}/inbox"
 LOCAL_DOMAIN = "test.example.com"
 LOCAL_USERNAME = "testuser"
-LOCAL_ACTOR_URI = f"https://{LOCAL_DOMAIN}/{LOCAL_USERNAME}"
+LOCAL_ACTOR_URI = f"https://{LOCAL_DOMAIN}/users/{LOCAL_USERNAME}"
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +568,7 @@ class TestFollowersCollection:
         """Root endpoint returns an OrderedCollection with correct fields."""
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/followers",
+                f"/users/{LOCAL_USERNAME}/followers",
                 headers={"Accept": "application/activity+json"},
             )
         assert resp.status_code == 200
@@ -578,14 +578,14 @@ class TestFollowersCollection:
         assert "totalItems" in data
         assert "first" in data
         assert "last" in data
-        assert f"/{LOCAL_USERNAME}/followers" in data["id"]
+        assert f"/users/{LOCAL_USERNAME}/followers" in data["id"]
 
     async def test_root_total_items_reflects_accepted_count(self, app: Quart) -> None:
         """Root totalItems matches the number of accepted followers."""
         await _seed_followers(app, 3)
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/followers",
+                f"/users/{LOCAL_USERNAME}/followers",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())
@@ -596,13 +596,13 @@ class TestFollowersCollection:
         await _seed_followers(app, 2)
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/followers?page=1",
+                f"/users/{LOCAL_USERNAME}/followers?page=1",
                 headers={"Accept": "application/activity+json"},
             )
         assert resp.status_code == 200
         data = json.loads(await resp.get_data())
         assert data["type"] == "OrderedCollectionPage"
-        assert data["partOf"].endswith(f"/{LOCAL_USERNAME}/followers")
+        assert data["partOf"].endswith(f"/users/{LOCAL_USERNAME}/followers")
         assert len(data["orderedItems"]) == 2
         # Items are actor URIs (strings).
         for item in data["orderedItems"]:
@@ -614,7 +614,7 @@ class TestFollowersCollection:
         await _seed_followers(app, 1)
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/followers?page=1",
+                f"/users/{LOCAL_USERNAME}/followers?page=1",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())
@@ -625,7 +625,7 @@ class TestFollowersCollection:
         await _seed_followers(app, 1)
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/followers?page=2",
+                f"/users/{LOCAL_USERNAME}/followers?page=2",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())
@@ -645,7 +645,7 @@ class TestFollowersCollection:
         """Root response includes the ActivityStreams @context."""
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/followers",
+                f"/users/{LOCAL_USERNAME}/followers",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())
@@ -659,7 +659,7 @@ class TestFollowingCollection:
         """Root endpoint returns an OrderedCollection with correct fields."""
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/following",
+                f"/users/{LOCAL_USERNAME}/following",
                 headers={"Accept": "application/activity+json"},
             )
         assert resp.status_code == 200
@@ -675,7 +675,7 @@ class TestFollowingCollection:
         await _seed_following(app, 5)
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/following",
+                f"/users/{LOCAL_USERNAME}/following",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())
@@ -686,7 +686,7 @@ class TestFollowingCollection:
         await _seed_following(app, 2)
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/following?page=1",
+                f"/users/{LOCAL_USERNAME}/following?page=1",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())
@@ -708,7 +708,7 @@ class TestFollowingCollection:
         """Root response includes the ActivityStreams @context."""
         async with app.test_client() as client:
             resp = await client.get(
-                f"/{LOCAL_USERNAME}/following",
+                f"/users/{LOCAL_USERNAME}/following",
                 headers={"Accept": "application/activity+json"},
             )
         data = json.loads(await resp.get_data())

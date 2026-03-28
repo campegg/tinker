@@ -21,12 +21,14 @@ A single-user microblog that operates as a federated ActivityPub node. Notes are
 
 ### 2.1 Route Structure
 
-| Route           | Purpose                                      | Auth     | Rendering                              |
-|-----------------|----------------------------------------------|----------|----------------------------------------|
-| `/`             | Home page — static welcome/branding page     | No       | Self-contained static HTML (inline CSS/JS) |
-| `/{actor}`      | Public profile + AP actor endpoint           | No       | Self-contained static HTML (inline CSS/JS) for browsers; JSON-LD for AP consumers (content negotiation) |
-| `/login`        | Login page                                   | No       | Self-contained static HTML (inline CSS/JS) |
-| `/admin/*`      | Admin interface                              | Yes      | Static HTML shells + Web Components + JSON API |
+| Route            | Purpose                                      | Auth     | Rendering                              |
+|------------------|----------------------------------------------|----------|----------------------------------------|
+| `/`              | Home page — static welcome/branding page     | No       | Self-contained static HTML (inline CSS/JS) |
+| `/users/{actor}` | Public profile + AP actor endpoint           | No       | Self-contained static HTML (inline CSS/JS) for browsers; JSON-LD for AP consumers (content negotiation) |
+| `/{actor}`       | Convenience redirect → `/users/{actor}`      | No       | 301 redirect                           |
+| `/@{actor}`      | Mastodon-style redirect → `/users/{actor}`   | No       | 301 redirect                           |
+| `/login`         | Login page                                   | No       | Self-contained static HTML (inline CSS/JS) |
+| `/admin/*`       | Admin interface                              | Yes      | Static HTML shells + Web Components + JSON API |
 
 ### 2.2 Home Page
 
@@ -34,7 +36,7 @@ A simple static page served at `/` containing whatever welcome message or brandi
 
 ### 2.3 Public Profile Page
 
-The public profile page at `/{actor}` displays:
+The public profile page at `/users/{actor}` displays:
 
 - Author display name, avatar, and short bio.
 - Fediverse handle (e.g., `@cam@campegg.com`) with copy-to-clipboard.
@@ -45,7 +47,7 @@ This is a self-contained static HTML file with all CSS and JS inline. Profile co
 
 A **"Follow me"** link is displayed on the page. Clicking it opens the visitor's Fediverse client pre-populated to follow this actor, using the actor's full AP URI as the target. This is implemented as a standard `<a>` link — no JavaScript required.
 
-The `/{actor}` route is dual-purpose — it also serves as the ActivityPub actor endpoint. Content negotiation on the `Accept` header determines the response:
+The `/users/{actor}` route is dual-purpose — it also serves as the ActivityPub actor endpoint. Content negotiation on the `Accept` header determines the response. Convenience redirects at `/{actor}` and `/@{actor}` send browsers to the canonical `/users/{actor}` URL:
 
 - **`application/activity+json` or `application/ld+json`:** Return the JSON-LD actor document (§4.1).
 - **`text/html` (or browser default):** Return the public profile HTML page.
@@ -97,9 +99,9 @@ When a note is edited (local or remote), the previous version is overwritten. No
 
 ### 4.1 Actor & Discovery
 
-- **Single actor** at a fixed `/{username}` endpoint. The username is set via environment variable (see §8.1). This is the same route as the public profile page (§2.3) — content negotiation determines whether to return the HTML profile or the JSON-LD actor document.
+- **Single actor** at a fixed `/users/{username}` endpoint (Mastodon-compatible path). The username is set via environment variable (see §8.1). This is the same route as the public profile page (§2.3) — content negotiation determines whether to return the HTML profile or the JSON-LD actor document. Convenience redirects exist at `/{username}` and `/@{username}` for human visitors.
 - **Actor document:** JSON-LD ActivityStreams object with `id`, `inbox`, `outbox`, `followers`, `following`, `preferredUsername`, `name`, `summary`, `icon`, `publicKey`. The `name`, `summary`, and `icon` fields are read from the database settings table (see §8.2). The `summary` field contains rendered HTML (the bio Markdown rendered with typographic processing), not the raw Markdown source.
-- **WebFinger:** `/.well-known/webfinger?resource=acct:{user}@{domain}` returning the actor's `self` link (which points to `/{username}`).
+- **WebFinger:** `/.well-known/webfinger?resource=acct:{user}@{domain}` returning the actor's `self` link (which points to `/users/{username}`).
 - **NodeInfo:** `/.well-known/nodeinfo` (version 2.0) advertising software name, version, protocols, user count (1), post count.
 
 ### 4.2 HTTP Signatures
@@ -119,11 +121,11 @@ When a note is edited (local or remote), the previous version is overwritten. No
   - Media attachments → `attachment` array
 - **Deletes:** On note delete, send `Delete` activity (with `Tombstone`) to all followers.
 - **Updates:** On note edit, send `Update{Note}` to all followers.
-- **Outbox endpoint:** `GET /{username}/outbox` returns an `OrderedCollection` of the actor's activities, paginated.
+- **Outbox endpoint:** `GET /users/{username}/outbox` returns an `OrderedCollection` of the actor's activities, paginated.
 
 ### 4.4 Inbox (Receiving)
 
-- **Endpoint:** `POST /{username}/inbox`
+- **Endpoint:** `POST /users/{username}/inbox`
 - **Supported incoming activity types:**
 
   | Activity              | Behaviour                                                            |
@@ -156,8 +158,8 @@ When a note is edited (local or remote), the previous version is overwritten. No
 
 ### 4.6 Followers & Following
 
-- **Followers collection:** `GET /{username}/followers` — `OrderedCollection`, paginated.
-- **Following collection:** `GET /{username}/following` — `OrderedCollection`, paginated.
+- **Followers collection:** `GET /users/{username}/followers` — `OrderedCollection`, paginated.
+- **Following collection:** `GET /users/{username}/following` — `OrderedCollection`, paginated.
 - **Storage:** Follower/following actor URIs, display names, avatar URLs, inbox URLs, shared inbox URLs, follow status (pending/accepted/rejected).
 
 ### 4.7 Object Storage & Caching
@@ -248,7 +250,7 @@ Each additional view is a static HTML shell that loads Web Components to fetch d
 
 The admin interface uses **static HTML shells** served from `static/admin/` that load **Web Components** (Custom Elements). Components handle rendering, state, and interaction by fetching data from admin JSON API endpoints on Quart. There is no SPA framework, no client-side routing, no JS build step, and no server-side template engine.
 
-Public pages (`/`, `/{actor}`, `/login`) are **not** part of the admin interface — they are self-contained static HTML files with all CSS and JS inline, served from `static/pages/`. They do not use Web Components or external JS/CSS files.
+Public pages (`/`, `/users/{actor}`, `/login`) are **not** part of the admin interface — they are self-contained static HTML files with all CSS and JS inline, served from `static/pages/`. They do not use Web Components or external JS/CSS files.
 
 - **Navigation:** Full page loads between views. Each admin view (timeline, notifications, profile, following, followers, likes, search) is a distinct static HTML shell that loads the appropriate Web Components.
 - **Timeline polling:** A Web Component polls the timeline JSON API endpoint via `fetch()` on a configurable interval and renders and prepends new items to the DOM.
@@ -267,7 +269,7 @@ All Web Components live in `static/js/components/`. They are grouped here by bui
 - **Remote actor data** flows down from a parent container component (e.g., `<timeline-view>` fetches a list of posts from the JSON API and passes each author's name, handle, and avatar as attributes to the `<status-item>` and `<actor-identity>` components it renders).
 - **Local user data** (nav bar avatar, profile edit heading) is injected server-side by Quart when it serves the admin HTML shell, as attributes on the relevant component (e.g., `<nav-bar user-name="..." user-handle="..." user-avatar="...">`). This avoids an extra API call on every page load and is consistent with how the public profile page already works.
 
-The public profile page (`/{actor}`) does not use Web Components at all — it is a static HTML file with content injected at serve time via string interpolation.
+The public profile page (`/users/{actor}`) does not use Web Components at all — it is a static HTML file with content injected at serve time via string interpolation.
 
 ---
 

@@ -40,9 +40,9 @@ def make_actor_uri(domain: str, username: str) -> str:
         username: The local actor username.
 
     Returns:
-        The canonical actor URI, e.g. ``"https://example.com/alice"``.
+        The canonical actor URI, e.g. ``"https://example.com/users/alice"``.
     """
-    return f"https://{domain}/{username}"
+    return f"https://{domain}/users/{username}"
 
 
 def load_config() -> dict[str, str]:

@@ -95,7 +95,7 @@ async def _login(client: Any) -> dict[str, str]:
 
 
 def _local_actor_uri() -> str:
-    return f"https://{LOCAL_DOMAIN}/{LOCAL_USERNAME}"
+    return f"https://{LOCAL_DOMAIN}/users/{LOCAL_USERNAME}"
 
 
 def _seed_like(db: Any, note_uri: str, **kwargs: Any) -> Any:

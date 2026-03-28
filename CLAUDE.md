@@ -19,7 +19,9 @@ Key rule: complete the current work package (tests passing, ruff clean, mypy str
 | Route           | Purpose                                      | Auth     | Rendering                              |
 |-----------------|----------------------------------------------|----------|----------------------------------------|
 | `/`             | Home page — static welcome/branding page     | No       | Self-contained static HTML (inline CSS/JS) |
-| `/{actor}`      | Public profile + AP actor endpoint           | No       | Self-contained static HTML (inline CSS/JS) for browsers; JSON-LD for AP consumers (content negotiation) |
+| `/users/{actor}` | Public profile + AP actor endpoint           | No       | Self-contained static HTML (inline CSS/JS) for browsers; JSON-LD for AP consumers (content negotiation) |
+| `/{actor}`      | Convenience redirect → `/users/{actor}`      | No       | 301 redirect                           |
+| `/@{actor}`     | Mastodon-style redirect → `/users/{actor}`   | No       | 301 redirect                           |
 | `/login`        | Login page                                   | No       | Static HTML page; styles from shared stylesheet (`/assets/css/styles.css`) |
 | `/admin/*`      | Admin interface                              | Yes      | Jinja2 templates + Web Components + JSON API |
 
@@ -146,7 +148,7 @@ Caddy and systemd configs live outside `tinker/` — they are system-level conce
 
 8. **Jinja2 for admin shells; string interpolation for public pages.** Admin views (`/admin/*`) are rendered by Jinja2 templates that live in `templates/admin/`. A shared base template (`templates/admin/base.html`) owns the `<head>`, `<nav-bar>`, and foundation `<script>` tags; each view extends it and overrides `{% block title %}`, `{% block main %}`, and `{% block scripts %}`. Jinja2's HTML auto-escaping is enabled by default for `.html` templates, which protects against XSS in injected user values (display name, handle, avatar, CSRF token). The `/{actor}` public profile page is the exception: it still uses simple string interpolation (not Jinja2) to embed display name, bio, avatar, handle, and links at serve time. Public pages do not use Jinja2 — see ADR-001. Admin pages load Web Components (Custom Elements) which fetch data from JSON API endpoints. JS is vanilla only — no framework, no bundler, no TypeScript. Pages should remain readable without JavaScript; interactivity is a progressive enhancement.
 
-9. **`/{actor}` is dual-purpose.** The actor route serves both as the public profile page (HTML for browsers) and the ActivityPub actor endpoint (JSON-LD for federation consumers). Content negotiation on `Accept` header determines the response. This is the same URI used in WebFinger and federation.
+9. **`/users/{actor}` is dual-purpose.** The actor route at `/users/{actor}` serves both as the public profile page (HTML for browsers) and the ActivityPub actor endpoint (JSON-LD for federation consumers). Content negotiation on `Accept` header determines the response. This is the canonical URI used in WebFinger and federation. Convenience redirects exist at `/{actor}` and `/@{actor}` (Mastodon-style) for human visitors.
 
 10. **Timeline polls, notifications push.** The admin timeline refreshes via polling (e.g., every 30s) against a JSON API endpoint. SSE is used only for notification events (likes, boosts, follows, replies). The inbox processing pipeline emits to an `asyncio.Queue`; the SSE endpoint reads from it.
 
@@ -214,7 +216,7 @@ Every endpoint that serves ActivityPub data must handle content negotiation corr
 | Outbox | `application/activity+json` or `application/ld+json` | `application/activity+json` |
 
 - If the `Accept` header requests HTML (or has no ActivityPub type), serve the HTML page. If it requests `application/activity+json` or includes `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`, serve the JSON-LD actor/object.
-- **Caddy/proxy configuration:** Set `Vary: Accept` on all content-negotiated responses. Without this, a cached HTML response may be served to a Mastodon fetch, or vice versa. This is a silent failure — no errors, just invisible breakage.
+- **Caddy/proxy configuration:** Set `Vary: Accept` on all content-negotiated responses (the `/users/{actor}` endpoint). Without this, a cached HTML response may be served to a Mastodon fetch, or vice versa. This is a silent failure — no errors, just invisible breakage.
 - Returning `application/json` instead of `application/activity+json` will make your actor undiscoverable on Mastodon with no error message.
 
 ### WebFinger
@@ -237,7 +239,7 @@ WebFinger must be served at `/.well-known/webfinger` and respond to `?resource=a
         {
             "rel": "http://webfinger.net/rel/profile-page",
             "type": "text/html",
-            "href": "https://{domain}/@{username}"
+            "href": "https://{domain}/users/{username}"
         }
     ]
 }
@@ -523,14 +525,14 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 ### Content Types
 
 - AP endpoints: `application/activity+json; charset=utf-8`.
-- `/{actor}` route: content negotiation — JSON-LD for AP consumers, HTML for browsers.
+- `/users/{actor}` route: content negotiation — JSON-LD for AP consumers, HTML for browsers.
 - Note URIs (`/notes/{id}`): JSON-LD for AP consumers, `302 → /` for browsers.
 - All other pages: standard `text/html`.
 
 ### Public Pages
 
-- Home page (`/`), public profile (`/{actor}`), and login page (`/login`) are static HTML pages. They may link to external stylesheets, JavaScript files, and Web Components served from `/assets/` — there is no requirement to inline assets.
-- The `/{actor}` profile page has its content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table — not Jinja2. (Admin pages use Jinja2; public pages do not. See ADR-001.)
+- Home page (`/`), public profile (`/users/{actor}`), and login page (`/login`) are static HTML pages. They may link to external stylesheets, JavaScript files, and Web Components served from `/assets/` — there is no requirement to inline assets.
+- The `/users/{actor}` profile page has its content (display name, bio, avatar, handle, links) injected server-side via simple string interpolation from the settings table — not Jinja2. (Admin pages use Jinja2; public pages do not. See ADR-001.)
 - Pages must not require JavaScript to display their core content; JS is a progressive enhancement only.
 - The shared stylesheet (`static/css/styles.css`, served at `/assets/css/styles.css`) owns the OKLCH color palette, semantic `light-dark()` tokens, `color-mix()` shade derivation, Inter `@font-face` declarations, the box-model reset, and page-specific component styles (e.g. `.login-form`). Prefer adding new component styles here rather than in `<style>` blocks.
 

@@ -133,7 +133,7 @@ class TestSignatureVerificationWithRefetch:
 
         signed_headers = sign_request(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             body=body,
             private_key_pem=old_private,
             key_id=REMOTE_KEY_ID,
@@ -141,7 +141,7 @@ class TestSignatureVerificationWithRefetch:
 
         result = verify_signature(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=old_public,
@@ -161,7 +161,7 @@ class TestSignatureVerificationWithRefetch:
         # Sign with the NEW private key (remote has rotated)
         signed_headers = sign_request(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             body=body,
             private_key_pem=new_private,
             key_id=REMOTE_KEY_ID,
@@ -170,7 +170,7 @@ class TestSignatureVerificationWithRefetch:
         # Verify with the OLD public key (what we have cached) → should fail
         result = verify_signature(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=old_public,
@@ -190,7 +190,7 @@ class TestSignatureVerificationWithRefetch:
         # The remote server signed with their NEW key
         signed_headers = sign_request(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             body=body,
             private_key_pem=new_private,
             key_id=REMOTE_KEY_ID,
@@ -199,7 +199,7 @@ class TestSignatureVerificationWithRefetch:
         # Step 1: Try verification with the OLD (cached) key → fails
         first_attempt = verify_signature(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=old_public,
@@ -235,7 +235,7 @@ class TestSignatureVerificationWithRefetch:
         # Step 3: Retry verification with the NEW key → succeeds
         second_attempt = verify_signature(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             headers=signed_headers,
             body=body,
             public_key_pem=refreshed_public_key,
@@ -255,7 +255,7 @@ class TestSignatureVerificationWithRefetch:
         # Signed with new key, but we only have the old key cached
         signed_headers = sign_request(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             body=body,
             private_key_pem=new_private,
             key_id=REMOTE_KEY_ID,
@@ -265,7 +265,7 @@ class TestSignatureVerificationWithRefetch:
         assert (
             verify_signature(
                 method="POST",
-                url="https://local.example.com/testuser/inbox",
+                url="https://local.example.com/users/testuser/inbox",
                 headers=signed_headers,
                 body=body,
                 public_key_pem=old_public,
@@ -378,7 +378,7 @@ class TestSignatureVerificationWithRefetch:
         # Remote signs with new key after rotation
         signed_headers = sign_request(
             method="POST",
-            url="https://local.example.com/testuser/inbox",
+            url="https://local.example.com/users/testuser/inbox",
             body=body,
             private_key_pem=new_private,
             key_id=REMOTE_KEY_ID,
@@ -409,7 +409,7 @@ class TestSignatureVerificationWithRefetch:
         assert (
             verify_signature(
                 method="POST",
-                url="https://local.example.com/testuser/inbox",
+                url="https://local.example.com/users/testuser/inbox",
                 headers=signed_headers,
                 body=body,
                 public_key_pem=old_public,
@@ -448,7 +448,7 @@ class TestSignatureVerificationWithRefetch:
         assert (
             verify_signature(
                 method="POST",
-                url="https://local.example.com/testuser/inbox",
+                url="https://local.example.com/users/testuser/inbox",
                 headers=signed_headers,
                 body=body,
                 public_key_pem=refreshed_key,

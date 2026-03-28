@@ -212,13 +212,14 @@ async def home() -> Response:
     )
 
 
-@public.route("/<username>", methods=["GET"])
+@public.route("/users/<username>", methods=["GET"])
 async def actor_profile(username: str) -> Response:
     """Serve the actor profile page or ActivityPub actor document.
 
-    Performs content negotiation on the ``Accept`` header: ActivityPub
-    consumers receive a JSON-LD actor document, while browsers receive
-    the rendered HTML profile page.
+    The canonical actor URI lives at ``/users/{username}``.  Performs
+    content negotiation on the ``Accept`` header: ActivityPub consumers
+    receive a JSON-LD actor document, while browsers receive the
+    rendered HTML profile page.
 
     Args:
         username: The username path segment from the URL.
@@ -277,7 +278,7 @@ async def actor_profile(username: str) -> Response:
 
 @public.route("/@<username>", methods=["GET"])
 async def actor_profile_redirect(username: str) -> Response:
-    """Redirect ``/@username`` to ``/username`` for Mastodon-style URLs.
+    """Redirect ``/@username`` to ``/users/username`` for Mastodon-style URLs.
 
     Some clients and federation software construct profile URLs with an
     ``@`` prefix.  This redirect ensures those URLs resolve correctly.
@@ -286,12 +287,32 @@ async def actor_profile_redirect(username: str) -> Response:
         username: The username path segment from the URL.
 
     Returns:
-        A ``301 Moved Permanently`` redirect to ``/<username>``.
+        A ``301 Moved Permanently`` redirect to ``/users/<username>``.
     """
     return Response(
         response="",
         status=301,
-        headers={"Location": f"/{username}"},
+        headers={"Location": f"/users/{username}"},
+    )
+
+
+@public.route("/<username>", methods=["GET"])
+async def actor_profile_legacy_redirect(username: str) -> Response:
+    """Redirect bare ``/<username>`` to ``/users/<username>``.
+
+    Provides a convenient short URL for humans while keeping the
+    canonical actor URI at the ``/users/`` path.
+
+    Args:
+        username: The username path segment from the URL.
+
+    Returns:
+        A ``301 Moved Permanently`` redirect to ``/users/<username>``.
+    """
+    return Response(
+        response="",
+        status=301,
+        headers={"Location": f"/users/{username}"},
     )
 
 
@@ -330,7 +351,7 @@ async def webfinger() -> Response:
             {
                 "rel": "http://webfinger.net/rel/profile-page",
                 "type": "text/html",
-                "href": f"https://{domain}/{username}",
+                "href": actor_uri,
             },
         ],
     }
@@ -450,7 +471,7 @@ async def note_object(note_id: str) -> Response:
     )
 
 
-@public.route("/<username>/outbox", methods=["GET"])
+@public.route("/users/<username>/outbox", methods=["GET"])
 async def outbox(username: str) -> Response:
     """Serve the ActivityPub outbox as an OrderedCollection.
 
@@ -618,7 +639,7 @@ async def _serve_ap_collection(
     )
 
 
-@public.route("/<username>/followers", methods=["GET"])
+@public.route("/users/<username>/followers", methods=["GET"])
 async def followers_collection(username: str) -> Response:
     """Serve the ActivityPub followers collection.
 
@@ -643,7 +664,7 @@ async def followers_collection(username: str) -> Response:
     )
 
 
-@public.route("/<username>/following", methods=["GET"])
+@public.route("/users/<username>/following", methods=["GET"])
 async def following_collection(username: str) -> Response:
     """Serve the ActivityPub following collection.
 
@@ -668,7 +689,7 @@ async def following_collection(username: str) -> Response:
     )
 
 
-@public.route("/<username>/inbox", methods=["POST"])
+@public.route("/users/<username>/inbox", methods=["POST"])
 async def inbox(username: str) -> Response:
     """Receive and process an incoming ActivityPub activity.
 

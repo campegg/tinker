@@ -127,16 +127,16 @@ class TestWebFinger:
 
         data = await response.get_json()
         assert data["subject"] == "acct:testuser@test.example.com"
-        assert data["aliases"] == ["https://test.example.com/testuser"]
+        assert data["aliases"] == ["https://test.example.com/users/testuser"]
         assert len(data["links"]) == 2
         self_link = data["links"][0]
         assert self_link["rel"] == "self"
         assert self_link["type"] == "application/activity+json"
-        assert self_link["href"] == "https://test.example.com/testuser"
+        assert self_link["href"] == "https://test.example.com/users/testuser"
         profile_link = data["links"][1]
         assert profile_link["rel"] == "http://webfinger.net/rel/profile-page"
         assert profile_link["type"] == "text/html"
-        assert profile_link["href"] == "https://test.example.com/testuser"
+        assert profile_link["href"] == "https://test.example.com/users/testuser"
 
     async def test_returns_404_for_unknown_user(self, client: Any) -> None:
         response = await client.get("/.well-known/webfinger?resource=acct:nobody@test.example.com")
@@ -158,7 +158,7 @@ class TestWebFinger:
         )
         data = await response.get_json()
         actor_href = data["links"][0]["href"]
-        assert actor_href == "https://test.example.com/testuser"
+        assert actor_href == "https://test.example.com/users/testuser"
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
@@ -233,7 +233,7 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={
                     "Accept": 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
                 },
@@ -248,7 +248,7 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
@@ -260,13 +260,13 @@ class TestActorDocument:
             "https://w3id.org/security/v1",
         ]
         assert data["type"] == "Person"
-        assert data["id"] == "https://test.example.com/testuser"
+        assert data["id"] == "https://test.example.com/users/testuser"
         assert data["preferredUsername"] == "testuser"
-        assert data["inbox"] == "https://test.example.com/testuser/inbox"
-        assert data["outbox"] == "https://test.example.com/testuser/outbox"
-        assert data["followers"] == "https://test.example.com/testuser/followers"
-        assert data["following"] == "https://test.example.com/testuser/following"
-        assert data["url"] == "https://test.example.com/testuser"
+        assert data["inbox"] == "https://test.example.com/users/testuser/inbox"
+        assert data["outbox"] == "https://test.example.com/users/testuser/outbox"
+        assert data["followers"] == "https://test.example.com/users/testuser/followers"
+        assert data["following"] == "https://test.example.com/users/testuser/following"
+        assert data["url"] == "https://test.example.com/users/testuser"
 
     async def test_actor_document_includes_public_key(self, client: Any) -> None:
         with patch(
@@ -274,14 +274,14 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
         data = await response.get_json()
         pk = data["publicKey"]
-        assert pk["id"] == "https://test.example.com/testuser#main-key"
-        assert pk["owner"] == "https://test.example.com/testuser"
+        assert pk["id"] == "https://test.example.com/users/testuser#main-key"
+        assert pk["owner"] == "https://test.example.com/users/testuser"
         assert pk["publicKeyPem"] == _FAKE_PUBLIC_KEY
 
     async def test_actor_document_includes_name_and_summary(self, client: Any) -> None:
@@ -290,7 +290,7 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
@@ -305,7 +305,7 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
@@ -332,7 +332,7 @@ class TestActorDocument:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
@@ -343,7 +343,7 @@ class TestActorDocument:
 
     async def test_returns_404_for_wrong_username(self, client: Any) -> None:
         response = await client.get(
-            "/wronguser",
+            "/users/wronguser",
             headers={"Accept": "application/activity+json"},
         )
         assert response.status_code == 404
@@ -357,20 +357,20 @@ class TestActorDocument:
 class TestProfileHTMLPage:
     async def test_returns_html_for_browser_request(self, client: Any) -> None:
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
         )
         assert response.status_code == 200
         assert "text/html" in response.content_type
 
     async def test_returns_html_when_no_accept_header(self, client: Any) -> None:
-        response = await client.get("/testuser")
+        response = await client.get("/users/testuser")
         assert response.status_code == 200
         assert "text/html" in response.content_type
 
     async def test_html_contains_handle(self, client: Any) -> None:
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -378,7 +378,7 @@ class TestProfileHTMLPage:
 
     async def test_html_contains_domain(self, client: Any) -> None:
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -398,7 +398,7 @@ class TestProfileHTMLPage:
                 await session.close()
 
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -417,7 +417,7 @@ class TestProfileHTMLPage:
                 await session.close()
 
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -438,7 +438,7 @@ class TestProfileHTMLPage:
                 await session.close()
 
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -447,17 +447,17 @@ class TestProfileHTMLPage:
 
     async def test_html_contains_follow_me_link(self, client: Any) -> None:
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
         # The follow link must be present and point to the actor's AP URI.
-        assert 'href="https://test.example.com/testuser"' in body
+        assert 'href="https://test.example.com/users/testuser"' in body
         assert "Follow me" in body
 
     async def test_returns_404_for_wrong_username_html(self, client: Any) -> None:
         response = await client.get(
-            "/wronguser",
+            "/users/wronguser",
             headers={"Accept": "text/html"},
         )
         assert response.status_code == 404
@@ -476,7 +476,7 @@ class TestProfileHTMLPage:
                 await session.close()
 
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -500,7 +500,7 @@ class TestProfileHTMLPage:
                 await session.close()
 
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         body = await response.get_data(as_text=True)
@@ -520,27 +520,27 @@ class TestContentNegotiation:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
         assert "application/activity+json" in response.content_type
 
     async def test_html_accept_gets_html(self, client: Any) -> None:
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
         assert "text/html" in response.content_type
 
     async def test_wildcard_accept_gets_html(self, client: Any) -> None:
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "*/*"},
         )
         assert "text/html" in response.content_type
 
     async def test_no_accept_header_gets_html(self, client: Any) -> None:
-        response = await client.get("/testuser")
+        response = await client.get("/users/testuser")
         assert "text/html" in response.content_type
 
     async def test_mixed_accept_with_ap_gets_json(self, client: Any) -> None:
@@ -549,7 +549,7 @@ class TestContentNegotiation:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "text/html, application/activity+json;q=0.9"},
             )
         # Our implementation treats any mention of activity+json as AP
@@ -571,8 +571,8 @@ class TestWebFingerActorRoundTrip:
         wf_data = await wf_response.get_json()
         actor_url = wf_data["links"][0]["href"]
 
-        # The actor URL path is /{username}
-        path = "/" + actor_url.split("/")[-1]
+        # The actor URL path is /users/{username}
+        path = "/users/" + actor_url.split("/")[-1]
 
         # Step 2: Fetch the actor document
         with patch(
@@ -611,7 +611,7 @@ class TestVaryHeader:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={"Accept": "application/activity+json"},
             )
 
@@ -622,7 +622,7 @@ class TestVaryHeader:
     async def test_html_response_includes_vary_accept(self, client: Any) -> None:
         """Browser HTML actor response carries Vary: Accept."""
         response = await client.get(
-            "/testuser",
+            "/users/testuser",
             headers={"Accept": "text/html"},
         )
 
@@ -632,7 +632,7 @@ class TestVaryHeader:
 
     async def test_vary_header_present_with_no_accept(self, client: Any) -> None:
         """Actor profile response without an Accept header still carries Vary: Accept."""
-        response = await client.get("/testuser")
+        response = await client.get("/users/testuser")
 
         assert response.status_code == 200
         vary = response.headers.get("Vary", "")
@@ -645,7 +645,7 @@ class TestVaryHeader:
             _mock_keypair_get_public_key(),
         ):
             response = await client.get(
-                "/testuser",
+                "/users/testuser",
                 headers={
                     "Accept": 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
                 },

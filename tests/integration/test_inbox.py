@@ -48,8 +48,8 @@ REMOTE_KEY_ID = f"{REMOTE_ACTOR_URI}#main-key"
 REMOTE_INBOX_URL = f"{REMOTE_ACTOR_URI}/inbox"
 LOCAL_DOMAIN = "test.example.com"
 LOCAL_USERNAME = "testuser"
-LOCAL_ACTOR_URI = f"https://{LOCAL_DOMAIN}/{LOCAL_USERNAME}"
-INBOX_PATH = f"/{LOCAL_USERNAME}/inbox"
+LOCAL_ACTOR_URI = f"https://{LOCAL_DOMAIN}/users/{LOCAL_USERNAME}"
+INBOX_PATH = f"/users/{LOCAL_USERNAME}/inbox"
 INBOX_URL = f"https://{LOCAL_DOMAIN}{INBOX_PATH}"
 
 
@@ -290,7 +290,7 @@ class TestInboxBasicValidation:
 
         client = app.test_client()
         resp = await client.post(
-            "/wronguser/inbox",
+            "/users/wronguser/inbox",
             data=body,
             headers={**headers, "Content-Type": "application/activity+json"},
         )
