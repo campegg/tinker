@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import logging
 
-from quart import Quart, g
+from quart import Quart, Response, g, request
 
 from app.core.config import load_config, make_actor_uri
 from app.core.database import close_engine, get_session_factory, init_engine
@@ -74,6 +74,13 @@ def create_app() -> Quart:
     async def _open_session() -> None:
         """Create a request-scoped database session."""
         g.db_session = session_factory()
+
+    @app.before_request
+    async def _generate_csp_nonce() -> None:
+        """Generate a per-request CSP nonce for inline scripts."""
+        import secrets
+
+        g.csp_nonce = secrets.token_hex(16)
 
     @app.teardown_appcontext
     async def _close_session(exc: BaseException | None) -> None:
@@ -189,5 +196,55 @@ def create_app() -> Quart:
     app.register_blueprint(api_bp)
     app.register_blueprint(sse_bp)
     app.register_blueprint(devtools_bp)
+
+    @app.after_request
+    async def _set_security_headers(response: Response) -> Response:
+        """Add security headers to every response.
+
+        Sets Content-Security-Policy on HTML responses (with different
+        policies for admin vs public pages), plus universal hardening
+        headers on all responses.
+        """
+        # Universal hardening headers.
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+
+        content_type = response.content_type or ""
+        if "text/html" not in content_type:
+            return response
+
+        nonce = getattr(g, "csp_nonce", "")
+        path = request.path
+
+        if path.startswith("/admin"):
+            # Strict CSP for admin pages — remote content is displayed
+            # but must not execute scripts or load remote resources.
+            response.headers["Content-Security-Policy"] = (
+                f"default-src 'self'; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                f"style-src 'self' 'unsafe-inline'; "
+                f"img-src 'self' data:; "
+                f"connect-src 'self'; "
+                f"font-src 'self'; "
+                f"object-src 'none'; "
+                f"base-uri 'self'; "
+                f"form-action 'self'; "
+                f"frame-ancestors 'none'"
+            )
+        else:
+            # Public pages and login — no remote content rendered.
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; "
+                "font-src 'self'; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self'; "
+                "frame-ancestors 'none'"
+            )
+
+        return response
 
     return app

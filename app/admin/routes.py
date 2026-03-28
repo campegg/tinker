@@ -23,6 +23,7 @@ from app.admin.auth import get_or_create_csrf_token, require_auth
 from app.services.settings import SettingsService
 
 admin = Blueprint("admin", __name__, url_prefix="/admin")
+devtools = Blueprint("devtools", __name__)
 
 
 async def _shell_context(nav_active: str) -> dict[str, str]:
@@ -57,6 +58,7 @@ async def _shell_context(nav_active: str) -> dict[str, str]:
         "user_handle": handle,
         "user_avatar": avatar_url,
         "csrf_token": csrf_token,
+        "csp_nonce": getattr(g, "csp_nonce", ""),
     }
 
 
@@ -142,3 +144,30 @@ async def followers() -> Any:
         Rendered ``admin/followers.html`` with the shared template context.
     """
     return await render_template("admin/followers.html", **await _shell_context("followers"))
+
+
+# ---------------------------------------------------------------------------
+# Dev tools
+# ---------------------------------------------------------------------------
+
+
+@devtools.route("/components")
+@require_auth
+async def component_gallery() -> Any:
+    """Serve the component gallery — a dev page showing all Web Components.
+
+    Not part of the main admin navigation. Useful for design review and
+    tweaking ``styles.css`` without navigating to each individual admin view.
+
+    Returns:
+        Rendered ``admin/components.html`` with the shared template context
+        plus timestamp helpers for the status-item examples.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    context = await _shell_context("")
+    context["now_iso"] = now.isoformat()
+    context["hour_ago_iso"] = (now - timedelta(hours=1)).isoformat()
+    context["day_ago_iso"] = (now - timedelta(days=1)).isoformat()
+    return await render_template("admin/components.html", **context)

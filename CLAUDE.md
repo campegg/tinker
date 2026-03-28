@@ -50,10 +50,12 @@ Key rule: complete the current work package (tests passing, ruff clean, mypy str
 ```
 tinker/
 ├── app/
-│   ├── __init__.py          # Quart app factory; registers blueprints, seeds admin password
-│   ├── core/                # Config, database session, middleware
-│   │   ├── config.py        # Env var loading, .env support
-│   │   └── database.py      # AsyncEngine, async_sessionmaker, PRAGMAs
+│   ├── __init__.py          # Quart app factory; blueprints, admin seed, CSP, HTTP client
+│   ├── core/                # Config, database session, shared infrastructure
+│   │   ├── config.py        # Env var loading, .env support, app constants
+│   │   ├── database.py      # AsyncEngine, async_sessionmaker, PRAGMAs
+│   │   ├── formatting.py    # Shared AP datetime formatting, handle derivation
+│   │   └── http_client.py   # Process-level httpx.AsyncClient singleton (HTTP/2)
 │   ├── models/              # 11 SQLAlchemy ORM models (Note, RemoteActor, Follower,
 │   │                        #   Following, TimelineItem, Notification, DeliveryQueue,
 │   │                        #   Settings, MediaAttachment, Like, Keypair)
@@ -71,7 +73,7 @@ tinker/
 │   │   ├── delivery.py      # Fan-out, retry, dead instance detection (WP-09)
 │   │   └── follow.py        # Outgoing Follow/Undo{Follow} service (WP-11)
 │   ├── admin/               # Admin interface
-│   │   ├── auth.py          # Login, logout, session, CSRF, rate limiting, require_auth
+│   │   ├── auth.py          # Login, logout, session, CSRF, rate limiting, require_auth, require_csrf
 │   │   ├── routes.py        # Auth-gated admin page routes (/admin/*)
 │   │   ├── api.py           # JSON API endpoints (WP-13+)
 │   │   └── sse.py           # Server-Sent Events for notification push (WP-16)
@@ -389,8 +391,9 @@ These standards are not aspirational — they are baseline expectations for ever
 
 - Passwords hashed with `argon2-cffi` — not bcrypt.
 - Session tokens in HTTPOnly, Secure, SameSite=Strict cookies — never localStorage.
-- CSRF protection via token on all state-changing endpoints.
-- Rate limiting on the login endpoint and the ActivityPub inbox.
+- CSRF protection via token on all state-changing endpoints. Admin JSON API endpoints use the `@require_csrf` decorator which validates the `X-CSRF-Token` header; form endpoints validate via `validate_csrf()`.
+- Content Security Policy on all HTML responses. Admin pages use a strict CSP with a per-request nonce for the inline CSRF bootstrap script (`script-src 'self' 'nonce-...'`); public pages use `script-src 'self'`. All responses include `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`.
+- Rate limiting on the login endpoint and the ActivityPub inbox, with hard caps (10k entries) on the in-memory rate-limit dicts to prevent memory exhaustion.
 - All database access via SQLAlchemy ORM — no raw SQL string construction.
 - All inbound ActivityPub content sanitised with `nh3` before storage and display.
 - Remote avatar URLs never rendered directly in `<img>` tags — proxy through local storage.
@@ -542,13 +545,20 @@ Managed via Alembic. Migration files live in `alembic/`. Applied on startup or a
 
 ### Admin UI
 
-- Jinja2 templates in `templates/admin/`. `base.html` owns all shared boilerplate; each view template extends it with `{% block title %}`, `{% block main %}`, and `{% block scripts %}` only.
+- Jinja2 templates in `templates/admin/`. `base.html` owns all shared boilerplate; each view template extends it with `{% block title %}`, `{% block main %}`, and `{% block scripts %}` only. The base template includes a CSP-nonced inline `<script>` that sets `window.__TINKER__.csrf` for Web Component use.
 - Jinja2 HTML auto-escaping is on by default — never use `| safe` on user-supplied values.
 - Add new admin views by creating a new child template and a one-line `render_template()` call in `app/admin/routes.py`. No other files need to change.
 - Web Components (Custom Elements) for reusable UI pieces (`<timeline-item>`, `<compose-box>`, `<notification-badge>`, etc.).
 - All admin data fetched via JSON API endpoints (under `app/admin/api.py`).
 - Vanilla JS only. No framework, no bundler, no TypeScript. JS files served from `static/js/`.
 - Pages should be readable without JS even if interactions require it (progressive enhancement where feasible).
+
+### HTTP Client
+
+- All outbound HTTP requests (federation delivery, actor fetches, avatar proxying, WebFinger lookups) use a shared process-level `httpx.AsyncClient` singleton managed by `app/core/http_client.py`.
+- The client is initialised at app startup (`init_http_client()`) and disposed on shutdown (`close_http_client()`). HTTP/2 is enabled via the `httpx[http2]` extra.
+- Never create per-request `httpx.AsyncClient` instances — use `get_http_client()` to obtain the shared client.
+- The shared client has a default `User-Agent` header and `follow_redirects=True`; callers only need to set endpoint-specific headers like `Accept`.
 
 ---
 

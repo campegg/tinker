@@ -7,7 +7,7 @@
         <link rel="stylesheet" href="/assets/css/styles.css" />
     </head>
     <body class="admin-page">
-        <script>
+        <script nonce="{{ csp_nonce }}">
             window.__TINKER__ = { csrf: "{{ csrf_token }}" };
         </script>
 
@@ -18,9 +18,7 @@
             user-avatar="{{ user_avatar }}"
         ></nav-bar>
 
-        <main class="admin-content">
-            {% block main %}{% endblock %}
-        </main>
+        <main class="admin-content">{% block main %}{% endblock %}</main>
 
         {# Foundation scripts — present on every admin page. #}
         <script type="module" src="/assets/js/components/actor-identity.js"></script>

@@ -31,6 +31,25 @@ def _test_env(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TINKER_USERNAME", "testuser")
 
 
+@pytest.fixture(autouse=True)
+def _mock_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent real HTTP requests from leaking through unmocked tests.
+
+    Replaces the shared HTTP client singleton with a mock whose request
+    methods raise ``RuntimeError`` if called.  Tests that need specific
+    HTTP behaviour override this at a more specific scope by patching
+    ``app.core.http_client.get_http_client`` or the ``_client`` module
+    attribute directly.
+    """
+    mock_client = MagicMock(spec=["get", "post", "head", "aclose"])
+    error = RuntimeError("Unmocked HTTP request — patch get_http_client in your test")
+    mock_client.get = AsyncMock(side_effect=error)
+    mock_client.post = AsyncMock(side_effect=error)
+    mock_client.head = AsyncMock(side_effect=error)
+    mock_client.aclose = AsyncMock()
+    monkeypatch.setattr("app.core.http_client._client", mock_client)
+
+
 @pytest.fixture
 async def app() -> AsyncGenerator[Quart, None]:
     """Create a test application instance with an initialised database schema."""
