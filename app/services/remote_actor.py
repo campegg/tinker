@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 import httpx
 import nh3
 
-from app.core.config import USER_AGENT
+from app.core.http_client import get_http_client
 from app.models.remote_actor import RemoteActor
 from app.repositories.remote_actor import RemoteActorRepository
 
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ACCEPT_HEADER = "application/activity+json"
-_REQUEST_TIMEOUT_SECONDS = 10.0
 
 
 class RemoteActorService:
@@ -98,20 +97,14 @@ class RemoteActorService:
             invalid JSON).
         """
         try:
-            async with httpx.AsyncClient(
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-                follow_redirects=True,
-            ) as client:
-                response = await client.get(
-                    uri,
-                    headers={
-                        "Accept": _ACCEPT_HEADER,
-                        "User-Agent": USER_AGENT,
-                    },
-                )
-                response.raise_for_status()
-                doc: dict[str, Any] = response.json()
-                return doc
+            client = get_http_client()
+            response = await client.get(
+                uri,
+                headers={"Accept": _ACCEPT_HEADER},
+            )
+            response.raise_for_status()
+            doc: dict[str, Any] = response.json()
+            return doc
         except httpx.HTTPStatusError as exc:
             logger.error(
                 "HTTP %s fetching actor document at %s",

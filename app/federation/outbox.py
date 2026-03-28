@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from app.core.formatting import format_ap_datetime
+
 if TYPE_CHECKING:
     from app.models.note import Note
 
@@ -35,21 +37,6 @@ AP_CONTEXT: list[str] = [
 # preceded by a word character so that mid-word occurrences are not matched
 # (e.g. "C#" is not a hashtag but "#rust" is).
 _HASHTAG_RE = re.compile(r"(?<!\w)#(\w+)", re.UNICODE)
-
-
-def _to_ap_datetime(dt: datetime) -> str:
-    """Format a datetime as an ActivityPub-compatible ISO 8601 UTC string.
-
-    Args:
-        dt: The datetime to format. Naive datetimes are assumed to be UTC.
-
-    Returns:
-        An ISO 8601 string in UTC, ending with ``"Z"``
-        (e.g. ``"2024-01-01T12:00:00Z"``).
-    """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _extract_tags(body: str) -> list[str]:
@@ -86,8 +73,8 @@ def build_note_object(note: Note, actor_uri: str) -> dict[str, Any]:
     """
     domain = urlparse(actor_uri).netloc
     followers_url = f"{actor_uri}/followers"
-    published = _to_ap_datetime(note.published_at)
-    updated = _to_ap_datetime(note.updated_at)
+    published = format_ap_datetime(note.published_at)
+    updated = format_ap_datetime(note.updated_at)
 
     tag_names = _extract_tags(note.body)
     tags: list[dict[str, str]] = [
@@ -180,7 +167,7 @@ def build_update_activity(note: Note, actor_uri: str) -> dict[str, Any]:
     """
     note_doc = build_note_object(note, actor_uri)
     followers_url = f"{actor_uri}/followers"
-    updated_ts = _to_ap_datetime(note.updated_at)
+    updated_ts = format_ap_datetime(note.updated_at)
 
     return {
         "@context": AP_CONTEXT,
@@ -210,7 +197,7 @@ def build_like_activity(post_uri: str, actor_uri: str, activity_id: str) -> dict
         "id": activity_id,
         "type": "Like",
         "actor": actor_uri,
-        "published": _to_ap_datetime(datetime.now(UTC)),
+        "published": format_ap_datetime(datetime.now(UTC)),
         "object": post_uri,
     }
 
@@ -237,7 +224,7 @@ def build_undo_like_activity(
         "id": activity_id,
         "type": "Undo",
         "actor": actor_uri,
-        "published": _to_ap_datetime(datetime.now(UTC)),
+        "published": format_ap_datetime(datetime.now(UTC)),
         "object": {
             "id": like_activity_id,
             "type": "Like",
@@ -264,7 +251,7 @@ def build_announce_activity(post_uri: str, actor_uri: str, activity_id: str) -> 
         "id": activity_id,
         "type": "Announce",
         "actor": actor_uri,
-        "published": _to_ap_datetime(datetime.now(UTC)),
+        "published": format_ap_datetime(datetime.now(UTC)),
         "to": [AP_PUBLIC],
         "cc": [followers_url],
         "object": post_uri,
@@ -293,7 +280,7 @@ def build_undo_announce_activity(
         "id": activity_id,
         "type": "Undo",
         "actor": actor_uri,
-        "published": _to_ap_datetime(datetime.now(UTC)),
+        "published": format_ap_datetime(datetime.now(UTC)),
         "object": {
             "id": announce_activity_id,
             "type": "Announce",
@@ -339,7 +326,7 @@ def build_update_person_activity(
         document embedded as the ``object`` (``@context`` stripped from
         the embedded object per AP convention).
     """
-    now = _to_ap_datetime(datetime.now(UTC))
+    now = format_ap_datetime(datetime.now(UTC))
     activity_id = generate_activity_id(actor_uri, "update-person")
     # Strip @context from the embedded object — only the top-level activity
     # carries the context.
@@ -380,7 +367,7 @@ def build_reject_follow_activity(
         "id": activity_id,
         "type": "Reject",
         "actor": actor_uri,
-        "published": _to_ap_datetime(datetime.now(UTC)),
+        "published": format_ap_datetime(datetime.now(UTC)),
         "object": follow_activity_uri,
     }
 
@@ -404,7 +391,7 @@ def build_delete_activity(note_ap_id: str, actor_uri: str) -> dict[str, Any]:
         "id": f"{note_ap_id}#delete",
         "type": "Delete",
         "actor": actor_uri,
-        "published": _to_ap_datetime(datetime.now(UTC)),
+        "published": format_ap_datetime(datetime.now(UTC)),
         "to": [AP_PUBLIC],
         "object": {
             "id": note_ap_id,

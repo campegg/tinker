@@ -26,8 +26,8 @@ class Like(UUIDModel):
 
     __tablename__ = "likes"
 
-    note_uri: Mapped[str] = mapped_column(Text, nullable=False)
-    actor_uri: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    note_uri: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    actor_uri: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, index=True)
     activity_uri: Mapped[str | None] = mapped_column(
         Text, unique=True, nullable=True, default=None
     )

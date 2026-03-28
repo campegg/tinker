@@ -38,7 +38,8 @@ from urllib.parse import urlparse
 import httpx
 import nh3
 
-from app.core.config import USER_AGENT, make_actor_uri
+from app.core.config import make_actor_uri
+from app.core.http_client import get_http_client
 from app.models.follower import Follower
 from app.models.like import Like
 from app.models.notification import Notification
@@ -105,7 +106,6 @@ _inbox_attempts: dict[str, list[float]] = defaultdict(list)
 # Fetch timeout for remote AP objects (used in Announce resolution)
 # ---------------------------------------------------------------------------
 
-_FETCH_TIMEOUT_SECONDS: float = 10.0
 
 # ---------------------------------------------------------------------------
 # InboxContext — bundles infrastructure params for background tasks
@@ -177,6 +177,11 @@ async def check_inbox_rate_limit(ip: str) -> bool:
         # Evict IPs whose last attempt has expired to prevent unbounded growth.
         for evict_ip in [k for k, ts in _inbox_attempts.items() if not ts or ts[-1] < cutoff]:
             del _inbox_attempts[evict_ip]
+        # Hard cap: if the dict has grown beyond a reasonable size despite
+        # per-entry eviction, clear it entirely.  This prevents memory
+        # exhaustion from a distributed attack using unique source IPs.
+        if len(_inbox_attempts) > 10_000:
+            _inbox_attempts.clear()
         return True
 
 
@@ -308,20 +313,14 @@ async def _fetch_ap_object(uri: str) -> dict[str, Any] | None:
         reason (network error, non-2xx status, or invalid JSON).
     """
     try:
-        async with httpx.AsyncClient(
-            timeout=_FETCH_TIMEOUT_SECONDS,
-            follow_redirects=True,
-        ) as client:
-            response = await client.get(
-                uri,
-                headers={
-                    "Accept": "application/activity+json",
-                    "User-Agent": USER_AGENT,
-                },
-            )
-            response.raise_for_status()
-            doc: dict[str, Any] = response.json()
-            return doc
+        client = get_http_client()
+        response = await client.get(
+            uri,
+            headers={"Accept": "application/activity+json"},
+        )
+        response.raise_for_status()
+        doc: dict[str, Any] = response.json()
+        return doc
     except httpx.HTTPStatusError as exc:
         logger.warning(
             "HTTP %s fetching AP object at %s",
@@ -787,8 +786,7 @@ async def _handle_create(
                 in_reply_to=in_reply_to,
                 raw_activity=json.dumps(activity, ensure_ascii=False),
             )
-            timeline_repo._session.add(item)
-            await session.flush()
+            await timeline_repo.add(item)
 
     if is_reply_to_local:
         notif_repo = NotificationRepository(session)
@@ -896,8 +894,7 @@ async def _handle_announce(
                 original_object_uri=object_id,
                 raw_activity=json.dumps(activity, ensure_ascii=False),
             )
-            timeline_repo._session.add(item)
-            await session.flush()
+            await timeline_repo.add(item)
 
     if is_boost_of_local:
         notif_repo = NotificationRepository(session)

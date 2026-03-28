@@ -57,13 +57,13 @@ LOCAL_ACTOR_URI = f"https://{LOCAL_DOMAIN}/{LOCAL_USERNAME}"
 def _make_capturing_delivery_client(
     captured: list[dict[str, Any]],
 ) -> Any:
-    """Return a mock httpx.AsyncClient that records POST calls.
+    """Return a mock httpx client that records POST calls.
 
     Args:
         captured: List that will receive dicts of ``{url, content, headers}``.
 
     Returns:
-        A mock class suitable for patching ``httpx.AsyncClient``.
+        A mock client suitable for patching ``get_http_client``.
     """
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
@@ -80,9 +80,7 @@ def _make_capturing_delivery_client(
 
     mock_client = MagicMock()
     mock_client.post = _post
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-    return MagicMock(return_value=mock_client)
+    return mock_client
 
 
 async def _wait_for_tasks(timeout: float = 1.0) -> None:
@@ -233,7 +231,10 @@ class TestSendFollow:
         await _seed_remote_actor(app)
         captured: list[dict[str, Any]] = []
 
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_follow
 
@@ -268,7 +269,10 @@ class TestSendFollow:
         await _seed_remote_actor(app)
         captured: list[dict[str, Any]] = []
 
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_follow
 
@@ -298,7 +302,10 @@ class TestSendFollow:
         await _seed_remote_actor(app)
         captured: list[dict[str, Any]] = []
 
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_follow
 
@@ -354,7 +361,10 @@ class TestSendFollow:
             await session.commit()
 
         captured: list[dict[str, Any]] = []
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_follow
 
@@ -421,7 +431,10 @@ class TestSendUnfollow:
             key_id: str = app.config["INBOX_KEY_ID"]
 
         # First follow.
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_follow
 
@@ -442,7 +455,10 @@ class TestSendUnfollow:
         captured.clear()
 
         # Now unfollow.
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_unfollow
 
@@ -472,7 +488,10 @@ class TestSendUnfollow:
         """send_unfollow deletes the Following record from the database."""
         await _seed_remote_actor(app)
 
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client([])):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client([]),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_follow, send_unfollow
 
@@ -512,7 +531,10 @@ class TestSendUnfollow:
     async def test_noop_when_not_following(self, app: Quart) -> None:
         """send_unfollow is a silent no-op when no Following record exists."""
         captured: list[dict[str, Any]] = []
-        with patch("httpx.AsyncClient", _make_capturing_delivery_client(captured)):
+        with patch(
+            "app.federation.delivery.get_http_client",
+            return_value=_make_capturing_delivery_client(captured),
+        ):
             async with app.app_context():
                 from app.federation.follow import send_unfollow
 

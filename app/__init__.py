@@ -8,6 +8,7 @@ from quart import Quart, g
 
 from app.core.config import load_config, make_actor_uri
 from app.core.database import close_engine, get_session_factory, init_engine
+from app.core.http_client import close_http_client, init_http_client
 from app.public.routes import public
 
 logger = logging.getLogger(__name__)
@@ -56,11 +57,18 @@ def create_app() -> Quart:
     # simultaneous outbound HTTP requests to remote inboxes.
     app.config["DELIVERY_SEMAPHORE"] = asyncio.Semaphore(10)
 
+    # Shared HTTP client for all outbound requests (federation delivery,
+    # actor fetches, avatar proxying, WebFinger lookups).  Created once at
+    # startup; disposed in _shutdown.
+    http_client = init_http_client()
+    app.config["HTTP_CLIENT"] = http_client
+
     # Queue for real-time notification events emitted by inbox processing.
     # The SSE endpoint (WP-16) reads from this queue to push events to the
-    # connected admin client.  Unbounded capacity is acceptable for a
-    # single-user server; events are also persisted to the DB.
-    app.config["NOTIFICATION_QUEUE"] = asyncio.Queue()
+    # connected admin client.  Capped at 1 000 pending events; overflow is
+    # caught by the QueueFull handler in inbox._emit_notification.  Events
+    # are also persisted to the DB so nothing is lost on overflow.
+    app.config["NOTIFICATION_QUEUE"] = asyncio.Queue(maxsize=1000)
 
     @app.before_request
     async def _open_session() -> None:
@@ -158,13 +166,14 @@ def create_app() -> Quart:
 
     @app.after_serving
     async def _shutdown() -> None:
-        """Cancel the delivery retry loop and dispose of the database engine on shutdown."""
+        """Cancel the delivery retry loop, close the HTTP client, and dispose of the DB engine."""
         loop_task: asyncio.Task[None] | None = app.config.get("DELIVERY_RETRY_LOOP_TASK")
         if loop_task is not None and not loop_task.done():
             loop_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await loop_task
 
+        await close_http_client()
         await close_engine(engine)
 
     app.register_blueprint(public)
@@ -172,11 +181,13 @@ def create_app() -> Quart:
     from app.admin.api import api as api_bp
     from app.admin.auth import auth
     from app.admin.routes import admin as admin_bp
+    from app.admin.routes import devtools as devtools_bp
     from app.admin.sse import sse_bp
 
     app.register_blueprint(auth)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(sse_bp)
+    app.register_blueprint(devtools_bp)
 
     return app

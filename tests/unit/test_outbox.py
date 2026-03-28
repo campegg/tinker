@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
+from app.core.formatting import format_ap_datetime
 from app.federation.outbox import (
     AP_CONTEXT,
     AP_PUBLIC,
     _extract_tags,
-    _to_ap_datetime,
     build_create_activity,
     build_delete_activity,
     build_note_object,
@@ -51,17 +51,17 @@ def _make_note(
 class TestToApDatetime:
     def test_formats_utc_datetime_with_z_suffix(self) -> None:
         dt = datetime(2024, 1, 15, 9, 30, 0, tzinfo=UTC)
-        result = _to_ap_datetime(dt)
+        result = format_ap_datetime(dt)
         assert result == "2024-01-15T09:30:00Z"
 
     def test_handles_naive_datetime_as_utc(self) -> None:
         dt = datetime(2024, 1, 15, 9, 30, 0)  # no tzinfo
-        result = _to_ap_datetime(dt)
+        result = format_ap_datetime(dt)
         assert result == "2024-01-15T09:30:00Z"
 
     def test_truncates_microseconds(self) -> None:
         dt = datetime(2024, 1, 15, 9, 30, 0, 123456, tzinfo=UTC)
-        result = _to_ap_datetime(dt)
+        result = format_ap_datetime(dt)
         assert result == "2024-01-15T09:30:00Z"
 
 

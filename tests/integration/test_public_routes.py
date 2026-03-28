@@ -136,7 +136,7 @@ class TestWebFinger:
         profile_link = data["links"][1]
         assert profile_link["rel"] == "http://webfinger.net/rel/profile-page"
         assert profile_link["type"] == "text/html"
-        assert profile_link["href"] == "https://test.example.com/@testuser"
+        assert profile_link["href"] == "https://test.example.com/testuser"
 
     async def test_returns_404_for_unknown_user(self, client: Any) -> None:
         response = await client.get("/.well-known/webfinger?resource=acct:nobody@test.example.com")

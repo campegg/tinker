@@ -20,10 +20,9 @@ import logging
 import uuid
 from pathlib import Path
 
-import httpx
 from PIL import Image
 
-from app.core.config import USER_AGENT
+from app.core.http_client import get_http_client
 
 try:
     import pillow_heif
@@ -72,8 +71,6 @@ _MIME_EXT: dict[str, str] = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
-
-_AVATAR_FETCH_TIMEOUT: float = 10.0
 
 # Subdirectory names under TINKER_MEDIA_PATH.
 _UPLOADS_SUBDIR = "uploads"
@@ -277,14 +274,10 @@ async def proxy_avatar(remote_url: str, media_path: str) -> str | None:
             return f"{_AVATARS_SUBDIR}/{candidate.name}"
 
     try:
-        async with httpx.AsyncClient(
-            timeout=_AVATAR_FETCH_TIMEOUT,
-            headers={"User-Agent": USER_AGENT},
-            follow_redirects=True,
-        ) as client:
-            response = await client.get(remote_url)
-            response.raise_for_status()
-            raw = response.content
+        client = get_http_client()
+        response = await client.get(remote_url)
+        response.raise_for_status()
+        raw = response.content
     except Exception as exc:
         logger.warning("Failed to fetch avatar from %r: %s", remote_url, exc)
         return None

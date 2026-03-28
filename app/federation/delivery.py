@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from app.core.http_client import get_http_client
 from app.federation.signatures import sign_request
 from app.models.delivery_queue import DeliveryQueue
 from app.repositories.delivery_queue import DeliveryQueueRepository
@@ -190,7 +191,7 @@ class DeliveryService:
             :class:`~app.models.delivery_queue.DeliveryQueue` entries,
             one per unique target inbox.
         """
-        followers = await self._follower_repo.get_accepted()
+        followers = await self._follower_repo.get_all_accepted()
 
         # Build a deduplicated, insertion-order-preserving inbox list.
         seen: dict[str, None] = {}
@@ -243,14 +244,13 @@ async def _attempt_http_delivery(
         private_key_pem=private_key_pem,
         key_id=key_id,
     )
-    timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            target_inbox,
-            content=body,
-            headers=sig_headers,
-        )
-        response.raise_for_status()
+    client = get_http_client()
+    response = await client.post(
+        target_inbox,
+        content=body,
+        headers=sig_headers,
+    )
+    response.raise_for_status()
 
 
 # ---------------------------------------------------------------------------

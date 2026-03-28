@@ -31,7 +31,7 @@ class Following(UUIDModel):
     inbox_url: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     display_name: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending", index=True)
 
     def __repr__(self) -> str:
         """Return a developer-friendly string representation."""

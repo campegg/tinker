@@ -39,15 +39,16 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 import httpx
 from quart import Blueprint, Response, current_app, g, request
 
-from app.admin.auth import get_or_create_csrf_token, require_auth, validate_csrf
-from app.core.config import PAGE_SIZE, USER_AGENT, make_actor_uri
+from app.admin.auth import get_or_create_csrf_token, require_auth, require_csrf
+from app.core.config import PAGE_SIZE, make_actor_uri
+from app.core.formatting import derive_handle, format_ap_datetime
+from app.core.http_client import get_http_client
 from app.federation.actor import build_actor_document
 from app.federation.delivery import DeliveryService, dispatch_new_items
 from app.federation.follow import send_follow, send_unfollow
@@ -106,20 +107,6 @@ def _json_response(data: Any, *, status: int = 200) -> Response:
     )
 
 
-def _csrf_error() -> Response:
-    """Return a 403 JSON response for a CSRF token mismatch."""
-    return _json_response({"error": "Invalid or missing CSRF token."}, status=403)
-
-
-def _validate_csrf_header() -> bool:
-    """Check the ``X-CSRF-Token`` request header against the session token.
-
-    Returns:
-        ``True`` if the header matches the session CSRF token.
-    """
-    return validate_csrf(request.headers.get("X-CSRF-Token"))
-
-
 async def _get_delivery_context() -> tuple[str, str, str, str]:
     """Return the values needed to sign and dispatch deliveries.
 
@@ -139,6 +126,34 @@ async def _get_delivery_context() -> tuple[str, str, str, str]:
         pem = await KeypairService(session).get_private_key()
         key_id_cached = f"https://{domain}/{username}#main-key"
     return domain, username, pem, key_id_cached
+
+
+def _dispatch_delivery(
+    items: list[DeliveryQueue],
+    private_key_pem: str,
+    key_id: str,
+) -> int:
+    """Schedule background delivery of queued items using app-scoped infrastructure.
+
+    Reads the session factory and concurrency semaphore from the current
+    app's configuration, avoiding repetitive config lookups at each call
+    site.
+
+    Args:
+        items: The list of delivery queue entries to dispatch.
+        private_key_pem: PEM-encoded RSA private key for signing.
+        key_id: Key ID URI for the HTTP Signature header.
+
+    Returns:
+        The number of tasks actually scheduled.
+    """
+    return dispatch_new_items(
+        items,
+        session_factory=current_app.config["DB_SESSION_FACTORY"],
+        private_key_pem=private_key_pem,
+        key_id=key_id,
+        semaphore=current_app.config["DELIVERY_SEMAPHORE"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -211,40 +226,6 @@ async def _find_inbox_for_post(post_id: str, db: AsyncSession) -> str | None:
         return following.inbox_url
 
     return None
-
-
-def _to_ap_ts(dt: datetime) -> str:
-    """Format a datetime as an ISO 8601 UTC string ending in ``Z``.
-
-    Args:
-        dt: A datetime (naive or timezone-aware).
-
-    Returns:
-        An ISO 8601 string such as ``"2026-03-21T10:00:00Z"``.
-    """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _derive_handle(actor_uri: str) -> str:
-    """Derive a ``@user@domain`` handle from an ActivityPub actor URI.
-
-    Parses Mastodon-style URIs (``/users/alice``, ``/u/alice``, ``/@alice``)
-    to produce a Fediverse handle. Falls back gracefully for non-standard
-    URI patterns.
-
-    Args:
-        actor_uri: The canonical ActivityPub URI of the remote actor.
-
-    Returns:
-        A handle string such as ``"@alice@mastodon.social"``.
-    """
-    parsed = urlparse(actor_uri)
-    domain = parsed.netloc
-    parts = [p for p in parsed.path.split("/") if p and p not in ("users", "u")]
-    username = parts[-1].lstrip("@") if parts else "unknown"
-    return f"@{username}@{domain}"
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +340,7 @@ async def get_timeline() -> Response:
                 "author_name": display_name,
                 "author_handle": actor_handle,
                 "author_avatar": avatar_url,
-                "published": _to_ap_ts(note.published_at),
+                "published": format_ap_datetime(note.published_at),
                 "body_html": note.body_html,
                 "media_url": media_url,
                 "liked": False,
@@ -371,7 +352,7 @@ async def get_timeline() -> Response:
 
     for item in tl_items:
         cached = cached_actors.get(item.actor_uri)
-        handle = cached.handle if cached and cached.handle else _derive_handle(item.actor_uri)
+        handle = cached.handle if cached and cached.handle else derive_handle(item.actor_uri)
         avatar = item.actor_avatar_url or ""
         name = item.actor_name or item.actor_uri
         uri = item.original_object_uri or ""
@@ -384,7 +365,7 @@ async def get_timeline() -> Response:
                 "author_name": name,
                 "author_handle": handle,
                 "author_avatar": avatar,
-                "published": _to_ap_ts(item.received_at),
+                "published": format_ap_datetime(item.received_at),
                 "body_html": item.content_html or "",
                 "media_url": None,
                 "liked": is_liked,
@@ -411,6 +392,7 @@ async def get_timeline() -> Response:
 
 @api.route("/notes", methods=["POST"])
 @require_auth
+@require_csrf
 async def create_note() -> Response:
     """Create and publish a new note, fanning out delivery to all followers.
 
@@ -425,9 +407,6 @@ async def create_note() -> Response:
         ``201 Created`` with the note's ``id`` and ``ap_id`` on success,
         ``400`` on missing/invalid input, or ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     if not payload or not isinstance(payload.get("body"), str) or not payload["body"].strip():
         return _json_response({"error": "Field 'body' is required."}, status=400)
@@ -471,15 +450,7 @@ async def create_note() -> Response:
     delivery_svc = DeliveryService(db)
     items = await delivery_svc.fan_out(activity)
 
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
-    dispatch_new_items(
-        items,
-        session_factory=session_factory,
-        private_key_pem=private_key_pem,
-        key_id=key_id,
-        semaphore=semaphore,
-    )
+    _dispatch_delivery(items, private_key_pem, key_id)
 
     return _json_response(
         {"id": str(note.id), "ap_id": note.ap_id},
@@ -489,6 +460,7 @@ async def create_note() -> Response:
 
 @api.route("/notes/<note_id>", methods=["PATCH"])
 @require_auth
+@require_csrf
 async def edit_note(note_id: str) -> Response:
     """Edit a note's body and deliver an Update activity to followers.
 
@@ -503,9 +475,6 @@ async def edit_note(note_id: str) -> Response:
         ``200`` with the note's ``id`` and ``ap_id``, ``400`` on invalid
         input, ``403`` on CSRF failure, or ``404`` if the note is not found.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     try:
         note_uuid = uuid.UUID(note_id)
     except ValueError:
@@ -530,21 +499,14 @@ async def edit_note(note_id: str) -> Response:
     delivery_svc = DeliveryService(session)
     items = await delivery_svc.fan_out(activity)
 
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
-    dispatch_new_items(
-        items,
-        session_factory=session_factory,
-        private_key_pem=private_key_pem,
-        key_id=key_id,
-        semaphore=semaphore,
-    )
+    _dispatch_delivery(items, private_key_pem, key_id)
 
     return _json_response({"id": str(note.id), "ap_id": note.ap_id})
 
 
 @api.route("/notes/<note_id>", methods=["DELETE"])
 @require_auth
+@require_csrf
 async def delete_note(note_id: str) -> Response:
     """Delete a note and deliver a Delete+Tombstone activity to followers.
 
@@ -555,9 +517,6 @@ async def delete_note(note_id: str) -> Response:
         ``204 No Content`` on success, ``400`` on invalid input,
         ``403`` on CSRF failure, or ``404`` if the note is not found.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     try:
         note_uuid = uuid.UUID(note_id)
     except ValueError:
@@ -580,15 +539,7 @@ async def delete_note(note_id: str) -> Response:
     delivery_svc = DeliveryService(session)
     items = await delivery_svc.fan_out(activity)
 
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
-    dispatch_new_items(
-        items,
-        session_factory=session_factory,
-        private_key_pem=private_key_pem,
-        key_id=key_id,
-        semaphore=semaphore,
-    )
+    _dispatch_delivery(items, private_key_pem, key_id)
 
     return Response(response="", status=204)
 
@@ -600,6 +551,7 @@ async def delete_note(note_id: str) -> Response:
 
 @api.route("/media", methods=["POST"])
 @require_auth
+@require_csrf
 async def upload_media() -> Response:
     """Upload an image file and create a :class:`~app.models.media_attachment.MediaAttachment`.
 
@@ -615,9 +567,6 @@ async def upload_media() -> Response:
         ``201 Created`` with ``{"id": "...", "url": "/media/uploads/..."}``
         on success.  ``400`` on validation failure.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     files = await request.files
     file = files.get("file")
     if file is None:
@@ -682,6 +631,7 @@ async def upload_media() -> Response:
 
 @api.route("/likes", methods=["POST"])
 @require_auth
+@require_csrf
 async def like_post() -> Response:
     """Like a remote post and deliver a Like activity to the post author.
 
@@ -696,9 +646,6 @@ async def like_post() -> Response:
         ``200`` with ``{"status": "ok"}`` on success or if already liked.
         ``400`` on missing/invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     post_id = _parse_post_id(payload)
     if post_id is None:
@@ -719,26 +666,19 @@ async def like_post() -> Response:
 
     inbox_url = await _find_inbox_for_post(post_id, db)
     delivery_svc = DeliveryService(db)
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
     enqueued_item: DeliveryQueue | None = None
     if inbox_url:
         enqueued_item = await delivery_svc.enqueue(activity, inbox_url)
     await db.commit()
     if inbox_url and enqueued_item is not None:
-        dispatch_new_items(
-            [enqueued_item],
-            session_factory=session_factory,
-            private_key_pem=private_key_pem,
-            key_id=key_id,
-            semaphore=semaphore,
-        )
+        _dispatch_delivery([enqueued_item], private_key_pem, key_id)
 
     return _json_response({"status": "ok"})
 
 
 @api.route("/unlikes", methods=["POST"])
 @require_auth
+@require_csrf
 async def unlike_post() -> Response:
     """Unlike a previously liked post and deliver an Undo{Like} activity.
 
@@ -753,9 +693,6 @@ async def unlike_post() -> Response:
         ``200`` with ``{"status": "ok"}`` on success or if not liked.
         ``400`` on missing/invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     post_id = _parse_post_id(payload)
     if post_id is None:
@@ -777,20 +714,12 @@ async def unlike_post() -> Response:
 
     inbox_url = await _find_inbox_for_post(post_id, db)
     delivery_svc = DeliveryService(db)
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
-    enqueued_item_unlike: DeliveryQueue | None = None
+    enqueued_item: DeliveryQueue | None = None
     if inbox_url:
-        enqueued_item_unlike = await delivery_svc.enqueue(activity, inbox_url)
+        enqueued_item = await delivery_svc.enqueue(activity, inbox_url)
     await db.commit()
-    if inbox_url and enqueued_item_unlike is not None:
-        dispatch_new_items(
-            [enqueued_item_unlike],
-            session_factory=session_factory,
-            private_key_pem=private_key_pem,
-            key_id=key_id,
-            semaphore=semaphore,
-        )
+    if inbox_url and enqueued_item is not None:
+        _dispatch_delivery([enqueued_item], private_key_pem, key_id)
 
     return _json_response({"status": "ok"})
 
@@ -802,6 +731,7 @@ async def unlike_post() -> Response:
 
 @api.route("/boosts", methods=["POST"])
 @require_auth
+@require_csrf
 async def boost_post() -> Response:
     """Boost a remote post and deliver an Announce activity.
 
@@ -819,9 +749,6 @@ async def boost_post() -> Response:
         ``200`` with ``{"status": "ok"}`` on success or if already boosted.
         ``400`` on missing/invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     post_id = _parse_post_id(payload)
     if post_id is None:
@@ -840,8 +767,6 @@ async def boost_post() -> Response:
     boost = Boost(note_uri=post_id, actor_uri=actor_uri, activity_uri=activity_id)
     await boost_repo.add(boost)
 
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
     delivery_svc = DeliveryService(db)
 
     inbox_url = await _find_inbox_for_post(post_id, db)
@@ -853,19 +778,14 @@ async def boost_post() -> Response:
     await db.commit()
 
     to_dispatch = ([enqueued_boost] if enqueued_boost is not None else []) + fan_out_items
-    dispatch_new_items(
-        to_dispatch,
-        session_factory=session_factory,
-        private_key_pem=private_key_pem,
-        key_id=key_id,
-        semaphore=semaphore,
-    )
+    _dispatch_delivery(to_dispatch, private_key_pem, key_id)
 
     return _json_response({"status": "ok"})
 
 
 @api.route("/unboosts", methods=["POST"])
 @require_auth
+@require_csrf
 async def unboost_post() -> Response:
     """Unboost a previously boosted post and deliver an Undo{Announce} activity.
 
@@ -883,9 +803,6 @@ async def unboost_post() -> Response:
         ``200`` with ``{"status": "ok"}`` on success or if not boosted.
         ``400`` on missing/invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     post_id = _parse_post_id(payload)
     if post_id is None:
@@ -905,8 +822,6 @@ async def unboost_post() -> Response:
 
     await boost_repo.delete(existing)
 
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
     delivery_svc = DeliveryService(db)
 
     inbox_url = await _find_inbox_for_post(post_id, db)
@@ -918,13 +833,7 @@ async def unboost_post() -> Response:
     await db.commit()
 
     to_dispatch = ([enqueued_unboost] if enqueued_unboost is not None else []) + fan_out_items
-    dispatch_new_items(
-        to_dispatch,
-        session_factory=session_factory,
-        private_key_pem=private_key_pem,
-        key_id=key_id,
-        semaphore=semaphore,
-    )
+    _dispatch_delivery(to_dispatch, private_key_pem, key_id)
 
     return _json_response({"status": "ok"})
 
@@ -987,7 +896,7 @@ async def get_notifications() -> Response:
     data: list[dict[str, Any]] = []
     for n in page:
         cached = cached_actors.get(n.actor_uri)
-        handle = cached.handle if cached and cached.handle else _derive_handle(n.actor_uri)
+        handle = cached.handle if cached and cached.handle else derive_handle(n.actor_uri)
         avatar = (cached.avatar_url or "") if cached else ""
         data.append(
             {
@@ -999,7 +908,7 @@ async def get_notifications() -> Response:
                 "actor_avatar": avatar,
                 "object_uri": n.object_uri or "",
                 "content": n.content or "",
-                "created_at": _to_ap_ts(n.created_at),
+                "created_at": format_ap_datetime(n.created_at),
                 "is_following": n.actor_uri in followed_uris,
             }
         )
@@ -1024,14 +933,13 @@ async def get_unread_notification_count() -> Response:
 
 @api.route("/notifications/mark-all-read", methods=["POST"])
 @require_auth
+@require_csrf
 async def mark_all_notifications_read() -> Response:
     """Mark all unread notifications as read.
 
     Returns:
         ``200`` with ``{"status": "ok"}``.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
     db: AsyncSession = g.db_session
     await NotificationRepository(db).mark_all_read()
     await db.commit()
@@ -1045,6 +953,7 @@ async def mark_all_notifications_read() -> Response:
 
 @api.route("/follow", methods=["POST"])
 @require_auth
+@require_csrf
 async def follow_actor() -> Response:
     """Send a ``Follow`` activity to a remote actor's inbox.
 
@@ -1059,9 +968,6 @@ async def follow_actor() -> Response:
         ``200`` with ``{"status": "ok"}`` on success.
         ``400`` on missing/invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     target_uri = _parse_actor_uri(payload)
     if target_uri is None:
@@ -1085,6 +991,7 @@ async def follow_actor() -> Response:
 
 @api.route("/unfollow", methods=["POST"])
 @require_auth
+@require_csrf
 async def unfollow_actor() -> Response:
     """Send an ``Undo{Follow}`` activity to retract a follow.
 
@@ -1099,9 +1006,6 @@ async def unfollow_actor() -> Response:
         ``200`` with ``{"status": "ok"}`` on success.
         ``400`` on missing/invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     target_uri = _parse_actor_uri(payload)
     if target_uri is None:
@@ -1167,6 +1071,7 @@ async def get_profile() -> Response:
 
 @api.route("/profile", methods=["PATCH"])
 @require_auth
+@require_csrf
 async def update_profile() -> Response:
     """Update the local user's profile settings.
 
@@ -1187,9 +1092,6 @@ async def update_profile() -> Response:
         ``200`` with ``{"status": "ok"}`` on success.
         ``400`` on invalid input.  ``403`` on CSRF failure.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     if not payload or not isinstance(payload, dict):
         return _json_response({"error": "JSON body required."}, status=400)
@@ -1236,15 +1138,7 @@ async def update_profile() -> Response:
     activity = build_update_person_activity(actor_doc, actor_uri)
     delivery_svc = DeliveryService(db)
     items = await delivery_svc.fan_out(activity)
-    session_factory = current_app.config["DB_SESSION_FACTORY"]
-    semaphore = current_app.config["DELIVERY_SEMAPHORE"]
-    dispatch_new_items(
-        items,
-        session_factory=session_factory,
-        private_key_pem=private_key_pem,
-        key_id=key_id,
-        semaphore=semaphore,
-    )
+    _dispatch_delivery(items, private_key_pem, key_id)
 
     return _json_response({"status": "ok"})
 
@@ -1295,7 +1189,7 @@ async def list_following() -> Response:
     data = []
     for r in records:
         remote = cached.get(r.actor_uri)
-        handle = remote.handle if remote and remote.handle else _derive_handle(r.actor_uri)
+        handle = remote.handle if remote and remote.handle else derive_handle(r.actor_uri)
         avatar = r.avatar_url or ""
         data.append(
             {
@@ -1303,11 +1197,11 @@ async def list_following() -> Response:
                 "display_name": r.display_name or r.actor_uri,
                 "handle": handle,
                 "avatar_url": avatar,
-                "created_at": _to_ap_ts(r.created_at),
+                "created_at": format_ap_datetime(r.created_at),
             }
         )
 
-    cursor: str | None = _to_ap_ts(records[-1].created_at) if records else None
+    cursor: str | None = format_ap_datetime(records[-1].created_at) if records else None
     return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
 
 
@@ -1358,7 +1252,7 @@ async def list_followers() -> Response:
     data = []
     for r in records:
         remote = cached.get(r.actor_uri)
-        handle = remote.handle if remote and remote.handle else _derive_handle(r.actor_uri)
+        handle = remote.handle if remote and remote.handle else derive_handle(r.actor_uri)
         avatar = r.avatar_url or ""
         data.append(
             {
@@ -1367,16 +1261,17 @@ async def list_followers() -> Response:
                 "handle": handle,
                 "avatar_url": avatar,
                 "is_following": r.actor_uri in followed_uris,
-                "created_at": _to_ap_ts(r.created_at),
+                "created_at": format_ap_datetime(r.created_at),
             }
         )
 
-    cursor: str | None = _to_ap_ts(records[-1].created_at) if records else None
+    cursor: str | None = format_ap_datetime(records[-1].created_at) if records else None
     return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
 
 
 @api.route("/followers", methods=["DELETE"])
 @require_auth
+@require_csrf
 async def remove_follower() -> Response:
     """Remove a follower and optionally send ``Reject{Follow}``.
 
@@ -1394,9 +1289,6 @@ async def remove_follower() -> Response:
         ``400`` on missing input.  ``403`` on CSRF failure.
         ``404`` if the follower is not found.
     """
-    if not _validate_csrf_header():
-        return _csrf_error()
-
     payload = await request.get_json(silent=True)
     target_uri = _parse_actor_uri(payload)
     if target_uri is None:
@@ -1415,15 +1307,7 @@ async def remove_follower() -> Response:
         delivery_svc = DeliveryService(db)
         inbox = follower.inbox_url
         item = await delivery_svc.deliver_to_inbox(activity, inbox)
-        session_factory = current_app.config["DB_SESSION_FACTORY"]
-        semaphore = current_app.config["DELIVERY_SEMAPHORE"]
-        dispatch_new_items(
-            [item],
-            session_factory=session_factory,
-            private_key_pem=private_key_pem,
-            key_id=key_id,
-            semaphore=semaphore,
-        )
+        _dispatch_delivery([item], private_key_pem, key_id)
 
     await follower_repo.delete(follower)
     await db.commit()
@@ -1487,7 +1371,7 @@ async def list_likes() -> Response:
             # No cached content — skip.
             continue
         cached = cached_actors.get(item.actor_uri)
-        handle = cached.handle if cached and cached.handle else _derive_handle(item.actor_uri)
+        handle = cached.handle if cached and cached.handle else derive_handle(item.actor_uri)
         avatar = item.actor_avatar_url or ""
         name = item.actor_name or item.actor_uri
         data.append(
@@ -1497,7 +1381,7 @@ async def list_likes() -> Response:
                 "author_name": name,
                 "author_handle": handle,
                 "author_avatar": avatar,
-                "published": _to_ap_ts(item.received_at),
+                "published": format_ap_datetime(item.received_at),
                 "body_html": item.content_html or "",
                 "media_url": None,
                 "liked": True,
@@ -1505,15 +1389,13 @@ async def list_likes() -> Response:
             }
         )
 
-    cursor: str | None = _to_ap_ts(likes[-1].created_at) if likes else None
+    cursor: str | None = format_ap_datetime(likes[-1].created_at) if likes else None
     return _json_response({"data": data, "cursor": cursor, "has_more": has_more})
 
 
 # ---------------------------------------------------------------------------
 # Search — remote actor lookup via WebFinger
 # ---------------------------------------------------------------------------
-
-_WEBFINGER_TIMEOUT = 10.0
 
 
 def _parse_fediverse_handle(q: str) -> tuple[str, str] | None:
@@ -1568,16 +1450,13 @@ async def search_actor() -> Response:
         f"?resource=acct:{handle_user}@{handle_domain}"
     )
     try:
-        async with httpx.AsyncClient(
-            timeout=_WEBFINGER_TIMEOUT,
-            follow_redirects=True,
-        ) as client:
-            resp = await client.get(
-                webfinger_url,
-                headers={"Accept": "application/jrd+json", "User-Agent": USER_AGENT},
-            )
-            resp.raise_for_status()
-            wf_data: dict[str, Any] = resp.json()
+        client = get_http_client()
+        resp = await client.get(
+            webfinger_url,
+            headers={"Accept": "application/jrd+json"},
+        )
+        resp.raise_for_status()
+        wf_data: dict[str, Any] = resp.json()
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError):
         return _json_response({"error": "Actor not found."}, status=404)
 
@@ -1612,7 +1491,7 @@ async def search_actor() -> Response:
         {
             "uri": actor.uri,
             "display_name": actor.display_name or actor.uri,
-            "handle": actor.handle or _derive_handle(actor.uri),
+            "handle": actor.handle or derive_handle(actor.uri),
             "avatar_url": actor.avatar_url or "",
             "header_image_url": actor.header_image_url or "",
             "bio": actor.bio or "",
@@ -1657,7 +1536,7 @@ async def get_actor() -> Response:
         {
             "uri": actor.uri,
             "display_name": actor.display_name or actor.uri,
-            "handle": actor.handle or _derive_handle(actor.uri),
+            "handle": actor.handle or derive_handle(actor.uri),
             "avatar_url": actor.avatar_url or "",
             "header_image_url": actor.header_image_url or "",
             "bio": actor.bio or "",

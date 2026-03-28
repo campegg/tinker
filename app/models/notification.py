@@ -55,6 +55,7 @@ class Notification(UUIDModel):
         Boolean,
         nullable=False,
         default=False,
+        index=True,
     )
 
     def __repr__(self) -> str:

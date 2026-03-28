@@ -263,14 +263,15 @@ class TestSaveUpload:
 
 
 def _make_mock_httpx_client(content: bytes, status_code: int = 200) -> Any:
-    """Build a mock httpx AsyncClient that returns ``content``.
+    """Build a mock httpx client that returns ``content``.
 
     Args:
         content: The bytes to return as the response body.
         status_code: The HTTP status code to simulate.
 
     Returns:
-        A mock class suitable for patching ``httpx.AsyncClient``.
+        A mock client suitable for use as the return value of
+        ``get_http_client``.
     """
     mock_response = MagicMock()
     mock_response.content = content
@@ -281,9 +282,7 @@ def _make_mock_httpx_client(content: bytes, status_code: int = 200) -> Any:
 
     mock_client = MagicMock()
     mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-    return MagicMock(return_value=mock_client)
+    return mock_client
 
 
 class TestProxyAvatar:
@@ -294,7 +293,7 @@ class TestProxyAvatar:
         url = "https://remote.example.com/avatars/alice.jpg"
         jpeg_bytes = _make_jpeg()
 
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(jpeg_bytes)):
+        with patch("app.media.get_http_client", return_value=_make_mock_httpx_client(jpeg_bytes)):
             local_path = await proxy_avatar(url, str(tmp_path))
 
         assert local_path is not None
@@ -304,7 +303,9 @@ class TestProxyAvatar:
     async def test_returns_relative_path(self, tmp_path: Path) -> None:
         """Return value is relative to media_path."""
         url = "https://remote.example.com/avatars/bob.jpg"
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(_make_jpeg())):
+        with patch(
+            "app.media.get_http_client", return_value=_make_mock_httpx_client(_make_jpeg())
+        ):
             result = await proxy_avatar(url, str(tmp_path))
         assert result is not None
         assert not result.startswith("/")
@@ -316,8 +317,8 @@ class TestProxyAvatar:
         The second call should not make a network request.
         """
         url = "https://remote.example.com/avatars/cached.jpg"
-        mock_cls = _make_mock_httpx_client(_make_jpeg())
-        with patch("httpx.AsyncClient", mock_cls):
+        mock_client = _make_mock_httpx_client(_make_jpeg())
+        with patch("app.media.get_http_client", return_value=mock_client):
             first = await proxy_avatar(url, str(tmp_path))
 
         # Second call — no HTTP mock needed; file already exists on disk.
@@ -327,14 +328,18 @@ class TestProxyAvatar:
     async def test_http_error_returns_none(self, tmp_path: Path) -> None:
         """Network error returns ``None`` without raising."""
         url = "https://remote.example.com/avatars/gone.jpg"
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(b"", status_code=404)):
+        with patch(
+            "app.media.get_http_client", return_value=_make_mock_httpx_client(b"", status_code=404)
+        ):
             result = await proxy_avatar(url, str(tmp_path))
         assert result is None
 
     async def test_non_image_data_returns_none(self, tmp_path: Path) -> None:
         """Non-image bytes return ``None`` without raising."""
         url = "https://remote.example.com/avatars/bad.jpg"
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(b"not an image")):
+        with patch(
+            "app.media.get_http_client", return_value=_make_mock_httpx_client(b"not an image")
+        ):
             result = await proxy_avatar(url, str(tmp_path))
         assert result is None
 
@@ -342,14 +347,16 @@ class TestProxyAvatar:
         """Avatar exceeding MAX_FILE_SIZE_BYTES returns ``None``."""
         url = "https://remote.example.com/avatars/huge.jpg"
         oversized = b"x" * (MAX_FILE_SIZE_BYTES + 1)
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(oversized)):
+        with patch("app.media.get_http_client", return_value=_make_mock_httpx_client(oversized)):
             result = await proxy_avatar(url, str(tmp_path))
         assert result is None
 
     async def test_creates_avatars_dir_if_missing(self, tmp_path: Path) -> None:
         """``avatars/`` subdirectory is created if it does not exist."""
         url = "https://remote.example.com/avatars/new.jpg"
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(_make_jpeg())):
+        with patch(
+            "app.media.get_http_client", return_value=_make_mock_httpx_client(_make_jpeg())
+        ):
             await proxy_avatar(url, str(tmp_path))
         assert (tmp_path / "avatars").is_dir()
 
@@ -357,7 +364,9 @@ class TestProxyAvatar:
         """Two distinct URLs produce two separate cached files."""
         url1 = "https://remote.example.com/avatars/alice.jpg"
         url2 = "https://remote.example.com/avatars/bob.jpg"
-        with patch("httpx.AsyncClient", _make_mock_httpx_client(_make_jpeg())):
+        with patch(
+            "app.media.get_http_client", return_value=_make_mock_httpx_client(_make_jpeg())
+        ):
             path1 = await proxy_avatar(url1, str(tmp_path))
             path2 = await proxy_avatar(url2, str(tmp_path))
         assert path1 != path2

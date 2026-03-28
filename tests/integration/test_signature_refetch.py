@@ -223,7 +223,7 @@ class TestSignatureVerificationWithRefetch:
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch(
-            "app.services.remote_actor.httpx.AsyncClient",
+            "app.services.remote_actor.get_http_client",
             return_value=mock_client,
         ):
             fetched_doc = await service.fetch_actor_document(REMOTE_ACTOR_URI)
@@ -285,7 +285,7 @@ class TestSignatureVerificationWithRefetch:
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch(
-            "app.services.remote_actor.httpx.AsyncClient",
+            "app.services.remote_actor.get_http_client",
             return_value=mock_client,
         ):
             result = await service.fetch_actor_document(REMOTE_ACTOR_URI)
@@ -341,7 +341,7 @@ class TestSignatureVerificationWithRefetch:
                 service = RemoteActorService(session)
 
                 with patch(
-                    "app.services.remote_actor.httpx.AsyncClient",
+                    "app.services.remote_actor.get_http_client",
                     return_value=mock_client,
                 ):
                     refreshed = await service.refresh(REMOTE_ACTOR_URI)
@@ -434,7 +434,7 @@ class TestSignatureVerificationWithRefetch:
                 service = RemoteActorService(session)
 
                 with patch(
-                    "app.services.remote_actor.httpx.AsyncClient",
+                    "app.services.remote_actor.get_http_client",
                     return_value=mock_client,
                 ):
                     refreshed_actor = await service.refresh(REMOTE_ACTOR_URI)

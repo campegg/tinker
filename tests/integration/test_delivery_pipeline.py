@@ -21,7 +21,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from quart import Quart
@@ -55,7 +55,7 @@ def _make_capturing_client(
     captured: list[dict[str, Any]],
     status_code: int = 202,
 ) -> Any:
-    """Build a mock httpx.AsyncClient that records POST calls.
+    """Build a mock ``httpx.AsyncClient`` that records POST calls.
 
     Each call to ``client.post(url, content=..., headers=...)`` appends a
     dict ``{"url": url, "content": bytes, "headers": dict}`` to
@@ -66,7 +66,7 @@ def _make_capturing_client(
         status_code: HTTP status code to simulate (default 202).
 
     Returns:
-        A mock object suitable for patching ``httpx.AsyncClient``.
+        A mock client suitable for patching ``get_http_client``.
     """
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
@@ -91,12 +91,7 @@ def _make_capturing_client(
 
     mock_client = MagicMock()
     mock_client.post = _post
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-
-    # The constructor returns the mock_client.
-    client_cls = MagicMock(return_value=mock_client)
-    return client_cls
+    return mock_client
 
 
 def _verify_captured_signature(
@@ -222,7 +217,7 @@ class TestNoteDelivery:
             delivery_svc = DeliveryService(session)
             items = await delivery_svc.fan_out(activity)
 
-        with patch("app.federation.delivery.httpx.AsyncClient", client_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=client_cls):
             dispatch_new_items(
                 items,
                 session_factory=session_factory,
@@ -261,7 +256,7 @@ class TestNoteDelivery:
             delivery_svc = DeliveryService(session)
             items = await delivery_svc.fan_out(activity)
 
-        with patch("app.federation.delivery.httpx.AsyncClient", client_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=client_cls):
             dispatch_new_items(
                 items,
                 session_factory=session_factory,
@@ -300,7 +295,7 @@ class TestNoteDelivery:
             delivery_svc = DeliveryService(session)
             items = await delivery_svc.fan_out(activity)
 
-        with patch("app.federation.delivery.httpx.AsyncClient", client_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=client_cls):
             dispatch_new_items(
                 items,
                 session_factory=session_factory,
@@ -363,7 +358,7 @@ class TestSharedInboxDeduplication:
 
         assert len(items) == 1
 
-        with patch("app.federation.delivery.httpx.AsyncClient", client_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=client_cls):
             dispatch_new_items(
                 items,
                 session_factory=session_factory,
@@ -409,7 +404,7 @@ class TestRetryOnFailure:
         fail_captured: list[dict[str, Any]] = []
         fail_client = _make_capturing_client(fail_captured, status_code=500)
 
-        with patch("app.federation.delivery.httpx.AsyncClient", fail_client):
+        with patch("app.federation.delivery.get_http_client", return_value=fail_client):
             dispatch_new_items(
                 items,
                 session_factory=session_factory,
@@ -441,7 +436,7 @@ class TestRetryOnFailure:
         success_captured: list[dict[str, Any]] = []
         success_client = _make_capturing_client(success_captured, status_code=202)
 
-        with patch("app.federation.delivery.httpx.AsyncClient", success_client):
+        with patch("app.federation.delivery.get_http_client", return_value=success_client):
             await _retry_loop_step(
                 session_factory=session_factory,
                 private_key_pem=private_key_pem,
@@ -510,7 +505,7 @@ class TestCrashRecovery:
         captured: list[dict[str, Any]] = []
         client_cls = _make_capturing_client(captured, status_code=202)
 
-        with patch("app.federation.delivery.httpx.AsyncClient", client_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=client_cls):
             count = await startup_recovery(
                 session_factory=session_factory,
                 private_key_pem=private_key_pem,

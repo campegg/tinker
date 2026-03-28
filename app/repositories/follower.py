@@ -74,6 +74,23 @@ class FollowerRepository(BaseRepository[Follower]):
         )
         return result.scalars().all()
 
+    async def get_all_accepted(self) -> Sequence[Follower]:
+        """Fetch all accepted followers without pagination.
+
+        Used by the delivery fan-out pipeline which must deliver to every
+        accepted follower, not just the first page.
+
+        Returns:
+            A sequence of all followers with status ``"accepted"``,
+            ordered by creation date descending.
+        """
+        result = await self._session.execute(
+            select(Follower)
+            .where(Follower.status == "accepted")
+            .order_by(Follower.created_at.desc())
+        )
+        return result.scalars().all()
+
     async def get_accepted_before(self, before: datetime, limit: int) -> Sequence[Follower]:
         """Fetch accepted follower records created before a given timestamp.
 

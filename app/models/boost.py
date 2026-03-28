@@ -26,7 +26,7 @@ class Boost(UUIDModel):
 
     __tablename__ = "boosts"
 
-    note_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    note_uri: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     actor_uri: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     activity_uri: Mapped[str | None] = mapped_column(
         Text, unique=True, nullable=True, default=None

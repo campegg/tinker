@@ -144,6 +144,9 @@ async def check_rate_limit(ip: str) -> bool:
         # Evict IPs whose last attempt has expired to prevent unbounded growth.
         for evict_ip in [k for k, ts in _login_attempts.items() if not ts or ts[-1] < cutoff]:
             del _login_attempts[evict_ip]
+        # Hard cap to prevent unbounded memory growth from distributed attacks.
+        if len(_login_attempts) > 10_000:
+            _login_attempts.clear()
         return True
 
 
@@ -168,6 +171,35 @@ def require_auth[F: Callable[..., Awaitable[Any]]](f: F) -> F:
     async def _wrapper(*args: Any, **kwargs: Any) -> Any:
         if not session.get("authenticated"):
             return redirect("/login")
+        return await f(*args, **kwargs)
+
+    return _wrapper  # type: ignore[return-value]  # wrapper has compatible runtime signature
+
+
+def require_csrf[F: Callable[..., Awaitable[Any]]](f: F) -> F:
+    """Decorator that validates the CSRF token from the ``X-CSRF-Token`` header.
+
+    Returns a ``403`` JSON response if the token is missing or does not
+    match the session's token. Intended for JSON API endpoints that
+    mutate state.
+
+    Args:
+        f: The async route handler to protect.
+
+    Returns:
+        The wrapped handler that enforces CSRF validation.
+    """
+    import json as _json
+
+    @wraps(f)
+    async def _wrapper(*args: Any, **kwargs: Any) -> Any:
+        token = request.headers.get("X-CSRF-Token")
+        if not validate_csrf(token):
+            return Response(
+                response=_json.dumps({"error": "Invalid or missing CSRF token."}),
+                status=403,
+                content_type="application/json; charset=utf-8",
+            )
         return await f(*args, **kwargs)
 
     return _wrapper  # type: ignore[return-value]  # wrapper has compatible runtime signature

@@ -38,12 +38,13 @@ class DeliveryQueue(UUIDModel):
     __tablename__ = "ap_delivery_queue"
 
     activity_json: Mapped[str] = mapped_column(Text, nullable=False)
-    target_inbox: Mapped[str] = mapped_column(Text, nullable=False)
+    target_inbox: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     status: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         default="pending",
         server_default="pending",
+        index=True,
     )
     attempts: Mapped[int] = mapped_column(
         Integer,

@@ -126,17 +126,14 @@ class TestSearchActor:
         """When WebFinger returns an HTTP error, the endpoint returns 404."""
         import httpx
 
-        with patch("app.admin.api.httpx.AsyncClient") as mock_client_cls:
-            mock_resp = MagicMock()
-            mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "404", request=MagicMock(), response=MagicMock()
-            )
-            mock_http = AsyncMock()
-            mock_http.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_http.__aexit__ = AsyncMock(return_value=False)
-            mock_http.get = AsyncMock(return_value=mock_resp)
-            mock_client_cls.return_value = mock_http
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "404", request=MagicMock(), response=MagicMock()
+        )
+        mock_http = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
 
+        with patch("app.admin.api.get_http_client", return_value=mock_http):
             async with application.test_client() as client:
                 await _login(client)
                 resp = await client.get("/admin/api/search?q=@alice@remote.example.com")
@@ -145,16 +142,13 @@ class TestSearchActor:
 
     async def test_webfinger_missing_self_link_returns_404(self, application: Quart) -> None:
         """When WebFinger has no ``self`` link, the endpoint returns 404."""
-        with patch("app.admin.api.httpx.AsyncClient") as mock_client_cls:
-            mock_resp = MagicMock()
-            mock_resp.raise_for_status = MagicMock()
-            mock_resp.json.return_value = {"links": []}  # No self link
-            mock_http = AsyncMock()
-            mock_http.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_http.__aexit__ = AsyncMock(return_value=False)
-            mock_http.get = AsyncMock(return_value=mock_resp)
-            mock_client_cls.return_value = mock_http
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"links": []}  # No self link
+        mock_http = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
 
+        with patch("app.admin.api.get_http_client", return_value=mock_http):
             async with application.test_client() as client:
                 await _login(client)
                 resp = await client.get("/admin/api/search?q=@alice@remote.example.com")
@@ -173,16 +167,13 @@ class TestSearchActor:
             ]
         }
 
-        with patch("app.admin.api.httpx.AsyncClient") as mock_client_cls:
-            mock_resp = MagicMock()
-            mock_resp.raise_for_status = MagicMock()
-            mock_resp.json.return_value = webfinger_resp
-            mock_http = AsyncMock()
-            mock_http.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_http.__aexit__ = AsyncMock(return_value=False)
-            mock_http.get = AsyncMock(return_value=mock_resp)
-            mock_client_cls.return_value = mock_http
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = webfinger_resp
+        mock_http = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
 
+        with patch("app.admin.api.get_http_client", return_value=mock_http):
             # Mock RemoteActorService so we don't hit the network.
             mock_actor = MagicMock()
             mock_actor.uri = REMOTE_ACTOR_URI

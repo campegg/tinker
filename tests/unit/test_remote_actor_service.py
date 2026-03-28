@@ -177,7 +177,7 @@ class TestGetByUri:
 class TestFetchActorDocument:
     async def test_successfully_fetches_and_parses_json(self, service: RemoteActorService) -> None:
         mock_client = _make_httpx_client(response_json=SAMPLE_ACTOR_DOC)
-        with patch("app.services.remote_actor.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.remote_actor.get_http_client", return_value=mock_client):
             result = await service.fetch_actor_document("https://mastodon.social/users/alice")
 
         assert result == SAMPLE_ACTOR_DOC
@@ -185,21 +185,21 @@ class TestFetchActorDocument:
 
     async def test_returns_none_on_http_error(self, service: RemoteActorService) -> None:
         mock_client = _make_httpx_client(raise_status_error=True)
-        with patch("app.services.remote_actor.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.remote_actor.get_http_client", return_value=mock_client):
             result = await service.fetch_actor_document("https://mastodon.social/users/alice")
 
         assert result is None
 
     async def test_returns_none_on_network_error(self, service: RemoteActorService) -> None:
         mock_client = _make_httpx_client(raise_request_error=True)
-        with patch("app.services.remote_actor.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.remote_actor.get_http_client", return_value=mock_client):
             result = await service.fetch_actor_document("https://mastodon.social/users/alice")
 
         assert result is None
 
     async def test_returns_none_on_invalid_json(self, service: RemoteActorService) -> None:
         mock_client = _make_httpx_client(raise_json_error=True)
-        with patch("app.services.remote_actor.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.remote_actor.get_http_client", return_value=mock_client):
             result = await service.fetch_actor_document("https://mastodon.social/users/alice")
 
         assert result is None

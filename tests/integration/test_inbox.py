@@ -104,13 +104,13 @@ def _signed_headers(body: bytes, private_pem: str, key_id: str = REMOTE_KEY_ID) 
 def _make_capturing_delivery_client(
     captured: list[dict[str, Any]],
 ) -> Any:
-    """Return a mock httpx.AsyncClient that records POST calls.
+    """Return a mock HTTP client that records POST calls.
 
     Args:
         captured: List that will receive dicts of ``{url, content, headers}``.
 
     Returns:
-        A mock class suitable for patching ``httpx.AsyncClient``.
+        A mock client suitable for patching ``get_http_client``.
     """
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
@@ -127,9 +127,7 @@ def _make_capturing_delivery_client(
 
     mock_client = MagicMock()
     mock_client.post = _post
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-    return MagicMock(return_value=mock_client)
+    return mock_client
 
 
 async def _wait_for_tasks(timeout: float = 1.0) -> None:
@@ -440,7 +438,7 @@ class TestFollowActivity:
         client_cls = _make_capturing_delivery_client(captured)
 
         client = app.test_client()
-        with patch("app.federation.delivery.httpx.AsyncClient", client_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=client_cls):
             resp = await client.post(
                 INBOX_PATH,
                 data=body,
@@ -491,7 +489,7 @@ class TestFollowActivity:
 
         client = app.test_client()
         null_delivery_cls = _make_capturing_delivery_client([])
-        with patch("app.federation.delivery.httpx.AsyncClient", null_delivery_cls):
+        with patch("app.federation.delivery.get_http_client", return_value=null_delivery_cls):
             resp = await client.post(
                 INBOX_PATH,
                 data=body,
@@ -1068,7 +1066,7 @@ class TestAcceptFollowActivityShape:
         headers = _signed_headers(body, private_pem)
 
         null_delivery = _make_capturing_delivery_client([])
-        with patch("app.federation.delivery.httpx.AsyncClient", null_delivery):
+        with patch("app.federation.delivery.get_http_client", return_value=null_delivery):
             client = app.test_client()
             resp = await client.post(
                 INBOX_PATH,
@@ -1376,3 +1374,479 @@ class TestRateLimit:
             inbox_module._INBOX_RATE_LIMIT_MAX = original_max
             async with inbox_module._rate_limit_lock:
                 inbox_module._inbox_attempts.clear()
+
+
+class TestAnnounceActivity:
+    """Tests for incoming Announce (boost) activities."""
+
+    async def test_announce_from_followed_actor_creates_timeline_item(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """An Announce from a followed actor creates a timeline item."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+        await _seed_following(app)
+
+        boosted_note_uri = "https://other.example.com/posts/99"
+        body = json.dumps(
+            {
+                "type": "Announce",
+                "id": f"{REMOTE_ACTOR_URI}/activities/announce/1",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Note",
+                    "id": boosted_note_uri,
+                    "attributedTo": "https://other.example.com/users/bob",
+                    "content": "<p>Boosted content from Bob</p>",
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            item = await repo.get_by_actor_type_and_object_uri(
+                actor_uri=REMOTE_ACTOR_URI,
+                activity_type="Announce",
+                original_object_uri=boosted_note_uri,
+            )
+
+        assert item is not None
+        assert item.activity_type == "Announce"
+        assert item.actor_uri == REMOTE_ACTOR_URI
+        assert item.original_object_uri == boosted_note_uri
+        assert item.content_html is not None
+        assert "Boosted content" in item.content_html
+
+    async def test_announce_from_unfollowed_actor_ignored(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """An Announce from an actor we don't follow creates no timeline item."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+        # No _seed_following — we do not follow this actor.
+
+        boosted_note_uri = "https://other.example.com/posts/unfollowed"
+        body = json.dumps(
+            {
+                "type": "Announce",
+                "id": f"{REMOTE_ACTOR_URI}/activities/announce/2",
+                "actor": REMOTE_ACTOR_URI,
+                "object": boosted_note_uri,
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            item = await repo.get_by_actor_type_and_object_uri(
+                actor_uri=REMOTE_ACTOR_URI,
+                activity_type="Announce",
+                original_object_uri=boosted_note_uri,
+            )
+
+        assert item is None
+
+    async def test_announce_of_local_note_creates_notification(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """An Announce of a local note creates a 'boost' notification."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+        local_note = await _seed_local_note(app)
+
+        body = json.dumps(
+            {
+                "type": "Announce",
+                "id": f"{REMOTE_ACTOR_URI}/activities/announce/3",
+                "actor": REMOTE_ACTOR_URI,
+                "object": local_note.ap_id,
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.repositories.notification import NotificationRepository
+
+            repo = NotificationRepository(session)
+            notifications = await repo.get_recent()
+
+        assert len(notifications) == 1
+        assert notifications[0].type == "boost"
+        assert notifications[0].actor_uri == REMOTE_ACTOR_URI
+        assert notifications[0].object_uri == local_note.ap_id
+
+    async def test_duplicate_announce_is_idempotent(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Duplicate Announce activities produce only one timeline item."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+        await _seed_following(app)
+
+        boosted_note_uri = "https://other.example.com/posts/dup"
+        body = json.dumps(
+            {
+                "type": "Announce",
+                "id": f"{REMOTE_ACTOR_URI}/activities/announce/4",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Note",
+                    "id": boosted_note_uri,
+                    "attributedTo": "https://other.example.com/users/bob",
+                    "content": "<p>Duplicate boost test</p>",
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        # Send the same Announce activity twice.
+        for _ in range(2):
+            resp = await client.post(
+                INBOX_PATH,
+                data=body,
+                headers={**headers, "Content-Type": "application/activity+json"},
+            )
+            assert resp.status_code == 202
+            await _wait_for_tasks()
+
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            all_items = await repo.get_recent(limit=50)
+
+        announce_items = [
+            i
+            for i in all_items
+            if i.activity_type == "Announce" and i.original_object_uri == boosted_note_uri
+        ]
+        assert len(announce_items) == 1
+
+
+class TestUndoAnnounceActivity:
+    """Tests for incoming Undo{Announce} activities."""
+
+    async def test_undo_announce_removes_timeline_item(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Undo{Announce} removes the corresponding timeline item."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+
+        boosted_note_uri = "https://other.example.com/posts/to-unboost"
+
+        # Seed a timeline item for the Announce directly.
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.models.timeline_item import TimelineItem
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            item = TimelineItem(
+                activity_type="Announce",
+                actor_uri=REMOTE_ACTOR_URI,
+                actor_name="Alice",
+                content_html="<p>Previously boosted</p>",
+                original_object_uri=boosted_note_uri,
+            )
+            await repo.add(item)
+            await repo.commit()
+
+        # Verify the item exists before we undo.
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            existing = await repo.get_by_actor_type_and_object_uri(
+                actor_uri=REMOTE_ACTOR_URI,
+                activity_type="Announce",
+                original_object_uri=boosted_note_uri,
+            )
+        assert existing is not None
+
+        # Now send the Undo{Announce}.
+        body = json.dumps(
+            {
+                "type": "Undo",
+                "id": f"{REMOTE_ACTOR_URI}/undos/announce/1",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Announce",
+                    "id": f"{REMOTE_ACTOR_URI}/activities/announce/1",
+                    "actor": REMOTE_ACTOR_URI,
+                    "object": boosted_note_uri,
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            remaining = await repo.get_by_actor_type_and_object_uri(
+                actor_uri=REMOTE_ACTOR_URI,
+                activity_type="Announce",
+                original_object_uri=boosted_note_uri,
+            )
+
+        assert remaining is None
+
+    async def test_undo_announce_no_matching_item_is_noop(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """Undo{Announce} for a nonexistent timeline item completes without error."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+
+        body = json.dumps(
+            {
+                "type": "Undo",
+                "id": f"{REMOTE_ACTOR_URI}/undos/announce/ghost",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Announce",
+                    "id": f"{REMOTE_ACTOR_URI}/activities/announce/ghost",
+                    "actor": REMOTE_ACTOR_URI,
+                    "object": "https://other.example.com/posts/nonexistent",
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        # No assertion on DB state — the point is that it did not error.
+
+
+class TestUpdateActivity:
+    """Tests for incoming Update activities."""
+
+    async def test_update_overwrites_timeline_content(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """An Update activity overwrites the cached timeline content."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+
+        note_uri = f"{REMOTE_ACTOR_URI}/posts/updatable"
+
+        # Seed a timeline item with the original content.
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.models.timeline_item import TimelineItem
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            item = TimelineItem(
+                activity_type="Create",
+                actor_uri=REMOTE_ACTOR_URI,
+                actor_name="Alice",
+                content_html="<p>Original content</p>",
+                original_object_uri=note_uri,
+            )
+            await repo.add(item)
+            await repo.commit()
+
+        # Send an Update activity with new content.
+        body = json.dumps(
+            {
+                "type": "Update",
+                "id": f"{REMOTE_ACTOR_URI}/activities/update/1",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Note",
+                    "id": note_uri,
+                    "attributedTo": REMOTE_ACTOR_URI,
+                    "content": "<p>Updated content after edit</p>",
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            result = await repo.get_by_object_uri(note_uri)
+            assert result is not None
+            assert result.content_html is not None
+            assert "Updated content after edit" in result.content_html
+            assert "Original content" not in result.content_html
+
+    async def test_update_for_unknown_object_is_noop(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """An Update for an object not in the timeline completes without error."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+
+        body = json.dumps(
+            {
+                "type": "Update",
+                "id": f"{REMOTE_ACTOR_URI}/activities/update/ghost",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Note",
+                    "id": f"{REMOTE_ACTOR_URI}/posts/nonexistent",
+                    "attributedTo": REMOTE_ACTOR_URI,
+                    "content": "<p>This targets nothing</p>",
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        # No assertion on DB state — the point is that it did not error.
+
+    async def test_update_sanitizes_html_content(
+        self,
+        app: Quart,
+        remote_keypair: tuple[str, str],
+    ) -> None:
+        """An Update with a <script> tag has the tag stripped before storage."""
+        public_pem, private_pem = remote_keypair
+        await _seed_remote_actor(app, public_pem)
+
+        note_uri = f"{REMOTE_ACTOR_URI}/posts/xss-update"
+
+        # Seed a timeline item to be updated.
+        session_factory = app.config["DB_SESSION_FACTORY"]
+        async with session_factory() as session:
+            from app.models.timeline_item import TimelineItem
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            item = TimelineItem(
+                activity_type="Create",
+                actor_uri=REMOTE_ACTOR_URI,
+                actor_name="Alice",
+                content_html="<p>Safe original</p>",
+                original_object_uri=note_uri,
+            )
+            await repo.add(item)
+            await repo.commit()
+
+        # Send an Update with malicious HTML.
+        malicious_content = '<p>Looks fine</p><script>alert("xss")</script><p>Really</p>'
+        body = json.dumps(
+            {
+                "type": "Update",
+                "id": f"{REMOTE_ACTOR_URI}/activities/update/xss",
+                "actor": REMOTE_ACTOR_URI,
+                "object": {
+                    "type": "Note",
+                    "id": note_uri,
+                    "attributedTo": REMOTE_ACTOR_URI,
+                    "content": malicious_content,
+                },
+            }
+        ).encode()
+        headers = _signed_headers(body, private_pem)
+
+        client = app.test_client()
+        resp = await client.post(
+            INBOX_PATH,
+            data=body,
+            headers={**headers, "Content-Type": "application/activity+json"},
+        )
+        assert resp.status_code == 202
+        await _wait_for_tasks()
+
+        async with session_factory() as session:
+            from app.repositories.timeline_item import TimelineItemRepository
+
+            repo = TimelineItemRepository(session)
+            result = await repo.get_by_object_uri(note_uri)
+            assert result is not None
+            assert result.content_html is not None
+            assert "<script>" not in result.content_html
+            assert "alert" not in result.content_html
+            assert "<p>Looks fine</p>" in result.content_html
+            assert "<p>Really</p>" in result.content_html
